@@ -5,6 +5,10 @@ import re
 import frappe
 from frappe import _
 
+from akg_ess.akg_ess.doctype.akg_ess_settings.akg_ess_settings import get_settings
+
+OCR_CACHE_KEY = "akg_ess:ocr_calls"
+
 OCR_PROMPT = """You are an OCR assistant for a UAE petty-cash app aligned to ERPNext Expense Claim. The user uploaded a receipt or invoice image. Extract these fields and return ONLY JSON:
 {
   "vendor": "supplier/vendor name (string)",
@@ -102,22 +106,57 @@ def get_session_profile():
     }
 
 
+def _ocr_month_key():
+    return f"{OCR_CACHE_KEY}:{frappe.utils.nowdate()[:7]}"
+
+
+def _ocr_increment_and_check(cap):
+    """Atomic-ish month-bucketed counter in Redis. Returns the new count.
+    Soft cap — if exceeded we log and return the count so the caller can
+    short-circuit without raising."""
+    try:
+        key = _ocr_month_key()
+        n = frappe.cache().incrby(key, 1) or 1
+        if n == 1:
+            # Expire ~32 days so the bucket rolls over naturally.
+            frappe.cache().expire(key, 32 * 24 * 3600)
+        if cap and n > cap:
+            frappe.log_error(
+                f"AKG ESS · OCR monthly cap exceeded: {n} > {cap}. Raise the cap in AKG ESS Settings or wait for next month.",
+                "AKG ESS · OCR cap",
+            )
+        return n
+    except Exception:
+        # Cache failure shouldn't block OCR — just skip the cap.
+        return 0
+
+
 @frappe.whitelist()
 def extract_receipt(data_url):
     """Server-side OCR proxy. Forwards a base64 image to Anthropic's
-    Claude Vision API. The Anthropic key is read from site_config.json
-    (`anthropic_api_key`) so it never ships in the bundle.
+    Claude Vision API. Settings (key, model, enable flag, monthly cap)
+    are read from the AKG ESS Settings Singleton; falls back to
+    site_config.json's `anthropic_api_key` for legacy installs.
 
     Returns the extracted JSON payload, or a safe empty default if the
-    key isn't configured / the call fails.
+    feature is disabled / the key is missing / the call fails.
     """
     if not data_url or "," not in data_url:
         return _empty_payload()
 
-    api_key = frappe.conf.get("anthropic_api_key")
-    if not api_key:
-        # Caller will get the safe defaults; the form still works, just no autofill.
+    settings = get_settings()
+    if not settings["enable_receipt_ocr"]:
         return _empty_payload()
+
+    api_key = settings["anthropic_api_key"]
+    if not api_key:
+        return _empty_payload()
+
+    cap = settings["monthly_call_cap"]
+    if cap:
+        count = _ocr_increment_and_check(cap)
+        if count and count > cap:
+            return _empty_payload()
 
     header, b64 = data_url.split(",", 1)
     media_type = "image/jpeg"
@@ -138,7 +177,7 @@ def extract_receipt(data_url):
 
         client = Anthropic(api_key=api_key)
         msg = client.messages.create(
-            model="claude-haiku-4-5-20251001",
+            model=settings["model"],
             max_tokens=512,
             messages=[
                 {

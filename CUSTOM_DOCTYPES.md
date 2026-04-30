@@ -63,7 +63,24 @@ In-app notifications. Filtered server-side by `permission_query_conditions` so e
 
 ---
 
-### 1.3 `Petty Cash Top-up Request`
+### 1.3 `AKG ESS Settings` *(Singleton)*
+
+App-wide settings. Created once on install; admins edit at `/app/akg-ess-settings`.
+
+| Fieldname               | Type     | Options / Notes                                                                          |
+|-------------------------|----------|------------------------------------------------------------------------------------------|
+| `enable_receipt_ocr`    | Check    | Default `1`. When off, the OCR endpoint returns empty defaults without calling the API.  |
+| `model`                 | Select   | `claude-haiku-4-5-20251001` (default) / `claude-sonnet-4-6`.                             |
+| `anthropic_api_key`     | Password | Encrypted at rest. Read server-side via `get_password()`. Never sent to the client.      |
+| `monthly_call_cap`      | Int      | Default `5000`. Soft cap — exceeding it logs an Error Log entry and OCR returns empty.   |
+| `default_radius_meters` | Int      | Default `200`. Used when a Project has site coords set but no explicit radius.           |
+| `settings_version`      | Data     | Read-only. Bump on schema changes.                                                       |
+
+**Permissions:** System Manager only (R/W).
+
+---
+
+### 1.4 `Petty Cash Top-up Request`
 
 Routed to the reporting manager. After approval, an Accounts user posts an `Employee Advance` against the petty cash account.
 

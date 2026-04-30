@@ -1,0 +1,44 @@
+{
+ "actions": [],
+ "creation": "2026-04-30 09:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 0,
+ "engine": "InnoDB",
+ "issingle": 1,
+ "field_order": [
+  "ocr_section",
+  "enable_receipt_ocr",
+  "model",
+  "column_break_1",
+  "anthropic_api_key",
+  "monthly_call_cap",
+  "geofence_section",
+  "default_radius_meters",
+  "version_section",
+  "settings_version"
+ ],
+ "fields": [
+  {"fieldname": "ocr_section", "fieldtype": "Section Break", "label": "Receipt OCR (Anthropic)"},
+  {"fieldname": "enable_receipt_ocr", "fieldtype": "Check", "label": "Enable Receipt OCR", "default": "1", "description": "When off, the petty-cash receipt scanner returns empty defaults and the user fills the form manually."},
+  {"fieldname": "model", "fieldtype": "Select", "label": "Model", "options": "claude-haiku-4-5-20251001\nclaude-sonnet-4-6", "default": "claude-haiku-4-5-20251001", "description": "Haiku is fast and cheap, recommended for receipt OCR. Switch to Sonnet only if you see consistent extraction errors."},
+  {"fieldname": "column_break_1", "fieldtype": "Column Break"},
+  {"fieldname": "anthropic_api_key", "fieldtype": "Password", "label": "Anthropic API Key", "description": "Get one at https://console.anthropic.com/settings/keys . Stored encrypted at rest."},
+  {"fieldname": "monthly_call_cap", "fieldtype": "Int", "label": "Monthly call cap (soft)", "default": "5000", "description": "Soft guardrail. When exceeded in a calendar month the server logs an Error Log entry and OCR returns empty defaults until reset. Set 0 to disable."},
+
+  {"fieldname": "geofence_section", "fieldtype": "Section Break", "label": "Geofence Defaults", "collapsible": 1},
+  {"fieldname": "default_radius_meters", "fieldtype": "Int", "label": "Default site radius (m)", "default": "200", "description": "Used when a Project has site coordinates set but no explicit radius."},
+
+  {"fieldname": "version_section", "fieldtype": "Section Break", "label": "System", "collapsible": 1},
+  {"fieldname": "settings_version", "fieldtype": "Data", "label": "Settings Version", "read_only": 1, "default": "1.0", "description": "Bump on schema changes."}
+ ],
+ "modified": "2026-04-30 09:00:00.000000",
+ "module": "AKG ESS",
+ "name": "AKG ESS Settings",
+ "owner": "Administrator",
+ "permissions": [
+  {"role": "System Manager", "read": 1, "write": 1, "create": 1, "delete": 0, "report": 0, "export": 0, "share": 1}
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "track_changes": 1
+}

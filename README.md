@@ -42,13 +42,15 @@ akg_ess/                           # Python package (Frappe app)
    - App name: `akg_ess`
 2. **Add to bench.** Pick the bench you want, click *Add*, wait for the build to finish.
 3. **Install on a site.** From the site dashboard, *Apps → Install App → AKG ESS*. Frappe will run migrations and import fixtures (the custom DocTypes and Custom Fields appear automatically).
-4. **Configure the OCR key (optional).** From the bench's *Site Config*, add:
+4. **Configure receipt OCR (optional).** Open `https://your-site/app/akg-ess-settings` as a System Manager and fill in:
 
-   ```json
-   { "anthropic_api_key": "sk-ant-..." }
-   ```
+   - **Anthropic API Key** — encrypted at rest. Get one at <https://console.anthropic.com/settings/keys>.
+   - **Model** — `claude-haiku-4-5-20251001` (default; cheap and fast) or `claude-sonnet-4-6` for tougher receipts.
+   - **Monthly call cap** — soft guardrail. Default 5000.
 
-   Without a key the receipt scanner returns empty defaults and the form just stays manual.
+   Without a key the receipt scanner returns empty defaults and the form just stays manual — no errors, no broken UI.
+
+   *(Legacy fallback: if you already have `anthropic_api_key` in `site_config.json`, the app reads that when the settings DocType has no key. Either works.)*
 5. **Open the app.** Visit `https://your-site/ess`.
 
 That's it. The PWA reads the user's session cookie set by `/api/method/login`, so as long as someone is logged into the Frappe site they're in the app.
@@ -66,9 +68,10 @@ bench build --app akg_ess
 To enable receipt OCR:
 
 ```bash
-bench --site <site-name> set-config anthropic_api_key sk-ant-...
 bench pip install anthropic
 ```
+
+Then open `https://<site>/app/akg-ess-settings` and paste your Anthropic key into the *Anthropic API Key* field. (Or if you prefer a CLI install, `bench --site <site> set-config anthropic_api_key sk-ant-...` still works as a fallback.)
 
 ## How it works
 
