@@ -49,6 +49,60 @@ def _parse_json_block(text):
 
 
 @frappe.whitelist()
+def get_session_profile():
+    """One-shot bootstrap: returns everything the PWA needs to populate the
+    home screen — current user, linked Employee, manager flag.
+
+    Doing this server-side avoids querying the `Has Role` child table over
+    REST (which is awkward) and saves a couple of round-trips on app boot.
+    """
+    user = frappe.session.user
+    if not user or user == "Guest":
+        frappe.local.response.http_status_code = 401
+        return {"signed_in": False}
+
+    user_doc = frappe.db.get_value(
+        "User", user,
+        ["full_name", "user_image"],
+        as_dict=True,
+    ) or {}
+
+    emp = frappe.db.get_value(
+        "Employee", {"user_id": user},
+        [
+            "name", "employee_name", "designation", "department", "image",
+            "company", "cell_number", "date_of_joining", "reports_to",
+        ],
+        as_dict=True,
+    ) or {}
+
+    roles = set(frappe.get_roles(user))
+    manager_roles = {"HR Manager", "Projects Manager", "ESS Manager", "Accounts Manager", "System Manager"}
+    is_manager = bool(roles & manager_roles)
+    if not is_manager and emp.get("name"):
+        # Falls back to "anyone reports to me" so even users without an
+        # explicit manager role still see their team's queues.
+        is_manager = bool(frappe.db.exists("Employee", {"reports_to": emp["name"], "status": "Active"}))
+
+    return {
+        "signed_in": True,
+        "user": user,
+        "full_name": user_doc.get("full_name") or emp.get("employee_name") or user,
+        "user_image": user_doc.get("user_image") or emp.get("image") or "",
+        "employee": emp.get("name"),
+        "employee_name": emp.get("employee_name"),
+        "designation": emp.get("designation"),
+        "department": emp.get("department"),
+        "company": emp.get("company"),
+        "cell_number": emp.get("cell_number"),
+        "date_of_joining": emp.get("date_of_joining"),
+        "reports_to": emp.get("reports_to"),
+        "is_manager": is_manager,
+        "roles": sorted(roles),
+    }
+
+
+@frappe.whitelist()
 def extract_receipt(data_url):
     """Server-side OCR proxy. Forwards a base64 image to Anthropic's
     Claude Vision API. The Anthropic key is read from site_config.json
@@ -60,11 +114,7 @@ def extract_receipt(data_url):
     if not data_url or "," not in data_url:
         return _empty_payload()
 
-    api_key = (
-        frappe.conf.get("anthropic_api_key")
-        or frappe.db.get_single_value("AKG ESS Settings", "anthropic_api_key")
-        if frappe.db.exists("DocType", "AKG ESS Settings") else frappe.conf.get("anthropic_api_key")
-    )
+    api_key = frappe.conf.get("anthropic_api_key")
     if not api_key:
         # Caller will get the safe defaults; the form still works, just no autofill.
         return _empty_payload()

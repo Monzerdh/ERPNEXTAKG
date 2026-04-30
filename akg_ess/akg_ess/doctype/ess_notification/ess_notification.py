@@ -16,13 +16,19 @@ def get_permission_query_conditions(user=None):
     user = user or frappe.session.user
     if not user or user == "Administrator":
         return ""
-    if "System Manager" in frappe.get_roles(user) or "HR Manager" in frappe.get_roles(user):
+    roles = frappe.get_roles(user)
+    if "System Manager" in roles or "HR Manager" in roles:
         return ""
     employee = _employee_for_user(user)
-    role = "manager" if "ESS Manager" in frappe.get_roles(user) else "employee"
-    parts = [f"`tabESS Notification`.for_role = 'all'", f"`tabESS Notification`.for_role = '{role}'"]
+    role = "manager" if "ESS Manager" in roles else "employee"
+    # frappe.db.escape returns the literal already wrapped in quotes, so we
+    # pass it through directly instead of stripping/re-wrapping.
+    parts = [
+        f"`tabESS Notification`.for_role = 'all'",
+        f"`tabESS Notification`.for_role = {frappe.db.escape(role)}",
+    ]
     if employee:
-        parts.append(f"`tabESS Notification`.recipient = '{frappe.db.escape(employee, percent=False).strip(chr(39))}'")
+        parts.append(f"`tabESS Notification`.recipient = {frappe.db.escape(employee)}")
     return "(" + " OR ".join(parts) + ")"
 
 

@@ -92,59 +92,36 @@
 
   async function loadCurrentUser() {
     if (_currentUserCache) return _currentUserCache;
-    const me = await callMethod('frappe.auth.get_logged_user');
-    if (!me || me === 'Guest') {
+    // Single-shot bootstrap on the server — avoids querying Has Role
+    // (a child table) over REST and saves round-trips.
+    const profile = await callMethod('akg_ess.api.get_session_profile').catch((e) => {
+      const err = new Error('Not signed in');
+      err.status = e.status || 401;
+      throw err;
+    });
+    if (!profile || !profile.signed_in) {
       const err = new Error('Not signed in');
       err.status = 401;
       throw err;
     }
-    const fullName = await get('/api/method/frappe.client.get_value', {
-      doctype: 'User',
-      filters: { name: me },
-      fieldname: ['full_name', 'user_image'],
-    }).then((r) => (r && r.message) || {});
 
-    const empRows = await listResource('Employee', {
-      filters: [['user_id', '=', me]],
-      fields: ['name', 'employee_name', 'designation', 'department', 'image', 'company', 'cell_number', 'date_of_joining', 'reports_to'],
-      limit: 1,
-    });
-    const emp = empRows[0] || {};
-
-    let isManager = false;
-    if (emp.name) {
-      const reports = await listResource('Employee', {
-        filters: [['reports_to', '=', emp.name]],
-        fields: ['name'],
-        limit: 1,
-      });
-      isManager = reports.length > 0;
-      if (!isManager) {
-        const roles = await callMethod('frappe.client.get_list', {
-          doctype: 'Has Role',
-          filters: { parent: me, role: ['in', ['HR Manager', 'Projects Manager', 'ESS Manager', 'Accounts Manager']] },
-          fields: ['role'],
-        }).catch(() => []);
-        isManager = (roles || []).length > 0;
-      }
-    }
-
-    const initials = (emp.employee_name || fullName.full_name || me)
+    const initials = (profile.employee_name || profile.full_name || profile.user || 'U')
       .split(/\s+/).filter(Boolean).slice(0, 2).map((s) => s[0]).join('').toUpperCase();
 
     _currentUserCache = {
-      employee: emp.name || null,
-      employee_name: emp.employee_name || fullName.full_name || me,
-      designation: emp.designation || '',
-      department: emp.department || '',
-      company: emp.company || '',
-      user_id: me,
-      is_manager: isManager,
-      reports_to: emp.reports_to || null,
-      cell_number: emp.cell_number || '',
-      date_of_joining: emp.date_of_joining || '',
+      employee: profile.employee || null,
+      employee_name: profile.employee_name || profile.full_name || profile.user,
+      designation: profile.designation || '',
+      department: profile.department || '',
+      company: profile.company || '',
+      user_id: profile.user,
+      is_manager: !!profile.is_manager,
+      reports_to: profile.reports_to || null,
+      cell_number: profile.cell_number || '',
+      date_of_joining: profile.date_of_joining || '',
       avatar_initials: initials || 'U',
-      image: emp.image || fullName.user_image || '',
+      image: profile.user_image || '',
+      roles: profile.roles || [],
     };
     window.CURRENT_USER = _currentUserCache;
     return _currentUserCache;

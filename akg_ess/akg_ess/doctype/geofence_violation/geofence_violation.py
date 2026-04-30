@@ -22,7 +22,10 @@ def on_status_change(doc, method=None):
     Idempotent — guarded by `linked_checkin` so a re-save doesn't create
     duplicate checkins.
     """
-    if doc.has_value_changed("status") is False:
+    # has_value_changed returns truthy on a real change. Bail early so we
+    # don't re-run on every save (it'd still be idempotent thanks to the
+    # linked_checkin guard, but it'd waste a query).
+    if not doc.has_value_changed("status"):
         return
 
     if doc.status == "Approved" and not doc.linked_checkin:
