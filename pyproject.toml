@@ -1,19 +1,26 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "akg_ess"
-authors = [
-    { name = "AKG Contracting", email = "it@akg.ae"}
-]
+version = "0.0.1"
 description = "Employee Self-Service PWA for AKG Contracting (attendance, leaves, petty cash)."
 requires-python = ">=3.10"
 readme = "README.md"
-dynamic = ["version"]
-dependencies = [
-    # frappe and erpnext are provided by the bench, do not list them here.
+license = {text = "MIT"}
+authors = [
+    {name = "AKG Contracting", email = "it@akg.ae"},
 ]
+dependencies = []
 
-[build-system]
-requires = ["flit_core >=3.4,<4"]
-build-backend = "flit_core.buildapi"
+[tool.setuptools.packages.find]
+include = ["akg_ess*"]
 
-[tool.flit.module]
-name = "akg_ess"
+[tool.setuptools.package-data]
+akg_ess = [
+    "**/*.css", "**/*.csv", "**/*.html", "**/*.ico",
+    "**/*.js", "**/*.json", "**/*.jsx", "**/*.md",
+    "**/*.png", "**/*.py", "**/*.svg", "**/*.txt",
+    "**/*.webmanifest", "**/*.woff", "**/*.woff2",
+]

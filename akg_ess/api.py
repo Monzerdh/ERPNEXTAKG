@@ -1,11 +1,7 @@
-import base64
 import json
 import re
 
 import frappe
-from frappe import _
-
-from akg_ess.akg_ess.doctype.akg_ess_settings.akg_ess_settings import get_settings
 
 OCR_CACHE_KEY = "akg_ess:ocr_calls"
 
@@ -143,6 +139,10 @@ def extract_receipt(data_url):
     """
     if not data_url or "," not in data_url:
         return _empty_payload()
+
+    # Lazy import — keeps api.py loadable even if the settings DocType isn't
+    # registered yet during install/migrate.
+    from akg_ess.akg_ess.doctype.akg_ess_settings.akg_ess_settings import get_settings
 
     settings = get_settings()
     if not settings["enable_receipt_ocr"]:
