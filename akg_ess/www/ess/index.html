@@ -1,0 +1,351 @@
+<!doctype html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>AKG ESS · Employee Self-Service</title>
+
+<!-- Frappe-rendered web page directives -->
+{% raw %}
+<!-- PWA -->
+<link rel="manifest" href="/assets/akg_ess/manifest.webmanifest" />
+<meta name="theme-color" content="#0F1E33" />
+<meta name="application-name" content="AKG ESS" />
+<meta name="description" content="Attendance, leaves and petty cash for AKG Contracting field staff." />
+<!-- iOS -->
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="AKG ESS" />
+<link rel="apple-touch-icon" href="/assets/akg_ess/assets/apple-touch-icon.png" />
+<!-- Android / generic -->
+<link rel="icon" type="image/png" sizes="192x192" href="/assets/akg_ess/assets/icon-192.png" />
+<link rel="icon" type="image/png" sizes="64x64" href="/assets/akg_ess/assets/favicon-64.png" />
+<meta name="mobile-web-app-capable" content="yes" />
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/assets/akg_ess/styles.css?v=30" />
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<script src="/assets/akg_ess/data.js?v=30"></script>
+<script src="/assets/akg_ess/api.js?v=30"></script>
+<script type="text/babel" src="/assets/akg_ess/ui.jsx?v=30"></script>
+<script type="text/babel" src="/assets/akg_ess/attendance.jsx?v=30"></script>
+<script type="text/babel" src="/assets/akg_ess/monthly-report.jsx?v=30"></script>
+<script type="text/babel" src="/assets/akg_ess/leaves.jsx?v=30"></script>
+<script type="text/babel" src="/assets/akg_ess/petty.jsx?v=30"></script>
+<script type="text/babel" src="/assets/akg_ess/profile.jsx?v=30"></script>
+<script type="text/babel" src="/assets/akg_ess/notifications.jsx?v=30"></script>
+
+<script type="text/babel">
+// Production runtime defaults (tweaks panel removed). Persisted client-side
+// preferences override these via localStorage on first mount.
+const RUNTIME_DEFAULTS = {
+  language: 'en',
+  variant: 'industrial',
+};
+
+// ─── Generic offline-queue sync ──────────────────────────────────────
+// Each queued item has _kind: 'checkin' | 'leave' | 'claim' | 'topup'
+async function syncOfflineQueue(queue, setQueue, setIsOffline) {
+  if (!queue.length) return 0;
+  if (setIsOffline) setIsOffline(false);
+  for (const item of queue) {
+    try {
+      if (item._kind === 'checkin' || !item._kind) {
+        await window.frappe.createCheckin(item);
+      } else if (item._kind === 'leave') {
+        await window.frappe.submitLeave(item);
+        await window.frappe.pushNotification({
+          kind: 'sync', title_key: 'item_synced',
+          body: `Leave application synced: ${item.leave_type} ${item.from_date} → ${item.to_date}`,
+          target: { tab: 'leaves' },
+        });
+      } else if (item._kind === 'claim') {
+        await window.frappe.submitClaim(item);
+        const total = (item.expenses || []).reduce((s, e) => s + (parseFloat(e.amount) || 0), 0);
+        await window.frappe.pushNotification({
+          kind: 'sync', title_key: 'item_synced',
+          body: `Expense claim synced · AED ${total.toFixed(2)}`,
+          target: { tab: 'petty' },
+        });
+      }
+    } catch (e) { /* swallow — keep going */ }
+  }
+  const n = queue.length;
+  setQueue([]);
+  window.dispatchEvent(new Event('akg:notifs-changed'));
+  return n;
+}
+
+function App() {
+  const [language, setLanguageState] = React.useState(() => {
+    try { return localStorage.getItem('akg.lang') || RUNTIME_DEFAULTS.language; } catch (e) { return RUNTIME_DEFAULTS.language; }
+  });
+  const [role, setRole] = React.useState('employee');
+  const [variant] = React.useState(RUNTIME_DEFAULTS.variant);
+
+  const [tab, setTab] = React.useState('attendance');
+  const [subView, setSubView] = React.useState(null);
+  const [offlineQueue, setOfflineQueue] = React.useState([]);
+  const [isOffline, setIsOffline] = React.useState(false);
+  const [loggedIn, setLoggedIn] = React.useState(false);
+  const [notifsOpen, setNotifsOpen] = React.useState(false);
+
+  // Hydrate session on first mount — try to fetch the current user.
+  // If 403/401 the login screen is rendered.
+  React.useEffect(() => {
+    (async () => {
+      try {
+        const u = await window.frappe.getCurrentUser();
+        if (u && u.employee) {
+          setLoggedIn(true);
+          if (u.is_manager) setRole('manager');
+          window.frappe.hydrateLegacyGlobals().catch(() => {});
+        }
+      } catch (e) { /* not signed in — show login */ }
+    })();
+  }, []);
+
+  React.useEffect(() => {
+    try { localStorage.setItem('akg.lang', language); } catch (e) {}
+  }, [language]);
+
+  React.useEffect(() => {
+    document.documentElement.setAttribute('data-variant', variant);
+    document.documentElement.setAttribute('dir', language === 'ar' ? 'rtl' : 'ltr');
+    document.documentElement.setAttribute('lang', language);
+  }, [variant, language]);
+
+  const setLanguage = React.useCallback((lang) => setLanguageState(lang), []);
+  const i18n = React.useMemo(() => ({ lang: language, t: window.STRINGS[language] }), [language]);
+
+  // Pending counts for nav badges
+  const [pending, setPending] = React.useState({ leaves: 0, claims: 0 });
+  React.useEffect(() => {
+    if (role !== 'manager') { setPending({ leaves: 0, claims: 0 }); return; }
+    Promise.all([window.frappe.getTeamLeaves(), window.frappe.getTeamClaims()])
+      .then(([l, c]) => setPending({ leaves: l.length, claims: c.length }))
+      .catch(() => setPending({ leaves: 0, claims: 0 }));
+  }, [role, tab]);
+
+  // Geofence mode is now driven by real GPS; the prototype "inside/outside"
+  // toggle is gone. Components fall back to live geolocation.
+  const geofenceMode = 'live';
+
+  if (!loggedIn) {
+    return (
+      <I18nCtx.Provider value={i18n}>
+        <ToastProvider>
+          <LoginScreen onSignIn={async (full_name) => {
+            setLoggedIn(true);
+            try {
+              const u = await window.frappe.getCurrentUser();
+              if (u && u.is_manager) setRole('manager');
+              window.frappe.hydrateLegacyGlobals().catch(() => {});
+            } catch (e) {}
+          }} lang={language} setLanguage={setLanguage} />
+        </ToastProvider>
+      </I18nCtx.Provider>
+    );
+  }
+
+  return (
+    <I18nCtx.Provider value={i18n}>
+      <ToastProvider>
+        <div className="app-shell">
+          <AppHeader role={role} isOffline={isOffline} setIsOffline={setIsOffline} offlineCount={offlineQueue.length} setTab={setTab} lang={language} setLanguage={setLanguage} onOpenNotifs={() => setNotifsOpen(true)} />
+
+          <div className="app-content">
+            {tab === 'attendance' && subView === 'monthly-report' && <MonthlyReport role={role} onBack={() => setSubView(null)} />}
+            {tab === 'attendance' && !subView && <AttendanceScreen geofenceMode={geofenceMode} offlineQueue={offlineQueue} setOfflineQueue={setOfflineQueue} isOffline={isOffline} setIsOffline={setIsOffline} onOpenMonthlyReport={() => setSubView('monthly-report')} />}
+            {tab === 'leaves' && <LeavesScreen role={role} isOffline={isOffline} offlineQueue={offlineQueue} setOfflineQueue={setOfflineQueue} />}
+            {tab === 'petty' && <PettyScreen role={role} geofenceMode={geofenceMode} isOffline={isOffline} offlineQueue={offlineQueue} setOfflineQueue={setOfflineQueue} />}
+            {tab === 'profile' && subView === 'outbox' && (
+              <div>
+                <button className="btn btn-sm btn-ghost" onClick={() => setSubView(null)} style={{ marginBottom: 12 }}>
+                  <Icon name="chevronL" size={14} /> Back
+                </button>
+                <OutboxView outbox={offlineQueue} isOffline={isOffline} onSyncAll={() => syncOfflineQueue(offlineQueue, setOfflineQueue, setIsOffline)} />
+              </div>
+            )}
+            {tab === 'profile' && !subView && <ProfileScreen role={role} setRole={setRole} onLogout={async () => { try { await window.frappe.logout(); } catch (e) {} setLoggedIn(false); }} outboxCount={offlineQueue.length} onOpenOutbox={() => setSubView('outbox')} />}
+          </div>
+
+          <BottomNav tab={tab} setTab={(n) => { setTab(n); setSubView(null); }} pending={pending} />
+        </div>
+        {notifsOpen && (
+          <NotificationsSheet
+            role={role}
+            onClose={() => setNotifsOpen(false)}
+            onNavigate={(targetTab) => { setTab(targetTab); setSubView(null); }}
+          />
+        )}
+      </ToastProvider>
+    </I18nCtx.Provider>
+  );
+}
+
+function AppHeader({ role, isOffline, setIsOffline, offlineCount, setTab, lang, setLanguage, onOpenNotifs }) {
+  const u = window.CURRENT_USER || { avatar_initials: '·' };
+  const t = useT();
+  const toggleLang = () => setLanguage(lang === 'ar' ? 'en' : 'ar');
+  return (
+    <div className="app-header">
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+        <img src="/assets/akg_ess/assets/akg-logo.png" alt="" style={{ width: 36, height: 36, objectFit: 'contain' }} />
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontSize: 15, fontWeight: 700, letterSpacing: '-0.01em' }}>AKG ESS</div>
+          <div style={{ fontSize: 10.5, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+            {role === 'manager' ? t.role_label_manager : t.role_label_employee} · {t.live}
+          </div>
+        </div>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <NotificationsBell role={role} onOpen={onOpenNotifs} />
+        <button
+          className="icon-btn"
+          onClick={toggleLang}
+          title={lang === 'ar' ? 'English' : 'العربية'}
+          style={{ color: 'var(--text-muted)' }}
+        >
+          <Icon name="globe" size={20} />
+        </button>
+        <button className="icon-btn refresh-btn" onClick={() => { window.location.reload(); }} title={t.refresh} style={{ color: 'var(--text-muted)' }}>
+          <Icon name="refresh" size={20} />
+        </button>
+        <button className="icon-btn" onClick={() => setIsOffline(!isOffline)} title={isOffline ? 'Go online' : 'Go offline (demo)'} style={{ color: isOffline ? 'var(--warn)' : 'var(--text-muted)', position: 'relative' }}>
+          <Icon name={isOffline ? 'wifiOff' : 'wifi'} size={20} />
+          {offlineCount > 0 && <span style={{ position: 'absolute', top: 2, right: 2, background: 'var(--warn)', color: 'white', fontSize: 9, fontWeight: 700, minWidth: 14, height: 14, borderRadius: 7, display: 'grid', placeItems: 'center', padding: '0 3px' }}>{offlineCount}</span>}
+        </button>
+        <button
+          className="app-header-avatar"
+          onClick={() => setTab && setTab('profile')}
+          title={t.tab_profile}
+          style={{ border: 0, cursor: 'pointer', font: 'inherit' }}
+        >{u.avatar_initials}</button>
+      </div>
+    </div>
+  );
+}
+
+function BottomNav({ tab, setTab, pending }) {
+  const t = useT();
+  const items = [
+    { id: 'attendance', label: t.tab_attendance, icon: 'clock' },
+    { id: 'leaves',     label: t.tab_leaves,     icon: 'calendar', badge: pending.leaves },
+    { id: 'petty',      label: t.tab_petty,      icon: 'wallet',   badge: pending.claims },
+    { id: 'profile',    label: t.tab_profile,    icon: 'user' },
+  ];
+  return (
+    <nav className="bottom-nav" style={{ '--nav-cols': items.length }}>
+      {items.map((it) => (
+        <button key={it.id} className={`bottom-nav-item ${tab === it.id ? 'active' : ''}`} onClick={() => setTab(it.id)}>
+          <Icon name={it.icon} size={22} />
+          <span>{it.label}</span>
+          {it.badge > 0 && <span className="bottom-nav-badge">{it.badge}</span>}
+        </button>
+      ))}
+    </nav>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+
+<!-- ─── PWA bootstrap ─────────────────────────────────────────────────── -->
+<script>
+(function () {
+  if ('serviceWorker' in navigator && location.protocol !== 'about:' && !location.ancestorOrigins?.length) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('/assets/akg_ess/sw.js', { scope: '/ess/' }).catch((err) => {
+        console.warn('[pwa] SW registration failed:', err);
+      });
+    });
+  }
+
+  let deferredPrompt = null;
+  const DISMISSED_KEY = 'akg.installDismissed';
+
+  function showBanner() {
+    if (localStorage.getItem(DISMISSED_KEY)) return;
+    if (window.matchMedia('(display-mode: standalone)').matches) return;
+    let b = document.getElementById('pwa-install-banner');
+    if (b) { b.style.display = 'flex'; return; }
+    b = document.createElement('div');
+    b.id = 'pwa-install-banner';
+    b.innerHTML = `
+      <div class="pwa-banner-icon">
+        <img src="/assets/akg_ess/assets/icon-192.png" alt="" />
+      </div>
+      <div class="pwa-banner-text">
+        <div class="pwa-banner-title">Install AKG ESS</div>
+        <div class="pwa-banner-sub">Get the app on your home screen — works offline.</div>
+      </div>
+      <button id="pwa-install-btn" class="pwa-banner-btn">Install</button>
+      <button id="pwa-dismiss-btn" class="pwa-banner-close" aria-label="Dismiss">×</button>
+    `;
+    document.body.appendChild(b);
+    document.getElementById('pwa-install-btn').addEventListener('click', async () => {
+      if (!deferredPrompt) return;
+      deferredPrompt.prompt();
+      const { outcome } = await deferredPrompt.userChoice;
+      if (outcome === 'accepted') localStorage.setItem(DISMISSED_KEY, '1');
+      deferredPrompt = null;
+      b.style.display = 'none';
+    });
+    document.getElementById('pwa-dismiss-btn').addEventListener('click', () => {
+      localStorage.setItem(DISMISSED_KEY, '1');
+      b.style.display = 'none';
+    });
+  }
+
+  function showIosBanner() {
+    if (localStorage.getItem(DISMISSED_KEY)) return;
+    if (window.navigator.standalone) return;
+    const b = document.createElement('div');
+    b.id = 'pwa-install-banner';
+    b.innerHTML = `
+      <div class="pwa-banner-icon">
+        <img src="/assets/akg_ess/assets/icon-192.png" alt="" />
+      </div>
+      <div class="pwa-banner-text">
+        <div class="pwa-banner-title">Install AKG ESS</div>
+        <div class="pwa-banner-sub">Tap <b>Share</b> ⎙ → <b>Add to Home Screen</b>.</div>
+      </div>
+      <button id="pwa-dismiss-btn" class="pwa-banner-close" aria-label="Dismiss">×</button>
+    `;
+    document.body.appendChild(b);
+    document.getElementById('pwa-dismiss-btn').addEventListener('click', () => {
+      localStorage.setItem(DISMISSED_KEY, '1');
+      b.style.display = 'none';
+    });
+  }
+
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    deferredPrompt = e;
+    setTimeout(showBanner, 4000);
+  });
+
+  window.addEventListener('appinstalled', () => {
+    localStorage.setItem(DISMISSED_KEY, '1');
+    const b = document.getElementById('pwa-install-banner');
+    if (b) b.style.display = 'none';
+  });
+
+  const isIos = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+  const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+  if (isIos && isSafari) setTimeout(showIosBanner, 4000);
+})();
+</script>
+{% endraw %}
+</body>
+</html>

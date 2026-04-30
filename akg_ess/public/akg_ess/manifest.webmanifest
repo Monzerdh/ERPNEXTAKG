@@ -1,0 +1,61 @@
+{
+  "name": "AKG ESS · Employee Self-Service",
+  "short_name": "AKG ESS",
+  "description": "Attendance, leaves and petty cash for AKG Contracting field staff.",
+  "id": "/ess",
+  "start_url": "/ess",
+  "scope": "/ess/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0F1E33",
+  "theme_color": "#0F1E33",
+  "lang": "en",
+  "dir": "ltr",
+  "categories": ["business", "productivity", "utilities"],
+  "icons": [
+    {
+      "src": "/assets/akg_ess/assets/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/assets/akg_ess/assets/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/assets/akg_ess/assets/icon-maskable-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/assets/akg_ess/assets/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Check in",
+      "short_name": "Check in",
+      "url": "/ess#tab=attendance",
+      "icons": [{ "src": "/assets/akg_ess/assets/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "New leave",
+      "short_name": "Leave",
+      "url": "/ess#tab=leaves",
+      "icons": [{ "src": "/assets/akg_ess/assets/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "New claim",
+      "short_name": "Claim",
+      "url": "/ess#tab=petty",
+      "icons": [{ "src": "/assets/akg_ess/assets/icon-192.png", "sizes": "192x192" }]
+    }
+  ]
+}

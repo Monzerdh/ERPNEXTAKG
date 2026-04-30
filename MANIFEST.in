@@ -1,0 +1,21 @@
+include MANIFEST.in
+include requirements.txt
+include *.json
+include *.md
+include *.py
+include *.txt
+recursive-include akg_ess *.css
+recursive-include akg_ess *.csv
+recursive-include akg_ess *.html
+recursive-include akg_ess *.ico
+recursive-include akg_ess *.js
+recursive-include akg_ess *.json
+recursive-include akg_ess *.jsx
+recursive-include akg_ess *.md
+recursive-include akg_ess *.png
+recursive-include akg_ess *.py
+recursive-include akg_ess *.svg
+recursive-include akg_ess *.txt
+recursive-include akg_ess *.webmanifest
+recursive-include akg_ess *.woff
+recursive-include akg_ess *.woff2

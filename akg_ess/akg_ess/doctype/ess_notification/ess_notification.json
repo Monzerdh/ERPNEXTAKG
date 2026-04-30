@@ -1,0 +1,51 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "format:NOTIF-{YYYY}-{#####}",
+ "creation": "2026-04-30 09:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 0,
+ "engine": "InnoDB",
+ "field_order": [
+  "recipient",
+  "for_role",
+  "kind",
+  "column_break_1",
+  "title",
+  "body",
+  "target_tab",
+  "target_id",
+  "is_read",
+  "read_on",
+  "section_break_1",
+  "payload"
+ ],
+ "fields": [
+  {"fieldname": "recipient", "fieldtype": "Link", "options": "Employee", "label": "Recipient (Employee)", "in_standard_filter": 1, "in_list_view": 1},
+  {"fieldname": "for_role", "fieldtype": "Select", "options": "\nemployee\nmanager\nall", "label": "For Role", "default": "employee", "in_standard_filter": 1},
+  {"fieldname": "kind", "fieldtype": "Select", "options": "info\napproval\nsync\nalert\nreminder", "label": "Kind", "default": "info"},
+  {"fieldname": "column_break_1", "fieldtype": "Column Break"},
+  {"fieldname": "title", "fieldtype": "Data", "label": "Title", "in_list_view": 1},
+  {"fieldname": "body", "fieldtype": "Small Text", "label": "Body", "in_list_view": 1},
+  {"fieldname": "target_tab", "fieldtype": "Select", "options": "\nattendance\nleaves\npetty\nprofile", "label": "Target Tab"},
+  {"fieldname": "target_id", "fieldtype": "Data", "label": "Target ID", "description": "Document name to focus when the user taps the notification."},
+  {"fieldname": "is_read", "fieldtype": "Check", "label": "Read", "default": 0, "in_list_view": 1, "in_standard_filter": 1},
+  {"fieldname": "read_on", "fieldtype": "Datetime", "label": "Read On", "read_only": 1},
+  {"fieldname": "section_break_1", "fieldtype": "Section Break", "label": "Payload", "collapsible": 1},
+  {"fieldname": "payload", "fieldtype": "Long Text", "label": "Payload (JSON)", "description": "Optional structured payload (JSON-encoded) for the client."}
+ ],
+ "modified": "2026-04-30 09:00:00.000000",
+ "module": "AKG ESS",
+ "name": "ESS Notification",
+ "naming_rule": "Expression",
+ "owner": "Administrator",
+ "permissions": [
+  {"role": "System Manager", "read": 1, "write": 1, "create": 1, "delete": 1, "report": 1, "export": 1, "share": 1},
+  {"role": "Employee",        "read": 1, "write": 1, "create": 0, "delete": 0, "report": 0, "export": 0, "share": 0}
+ ],
+ "search_fields": "title,body,recipient",
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "title_field": "title",
+ "track_changes": 0
+}

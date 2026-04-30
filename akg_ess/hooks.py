@@ -1,0 +1,75 @@
+app_name = "akg_ess"
+app_title = "AKG ESS"
+app_publisher = "AKG Contracting"
+app_description = "Employee Self-Service PWA for AKG Contracting (attendance, leaves, petty cash)."
+app_email = "it@akg.ae"
+app_license = "MIT"
+
+# Static asset bundles — Frappe copies these into the bench's sites/assets/<app>/ directory
+# during `bench build`. They are then served at /assets/akg_ess/...
+# We keep the PWA files in akg_ess/public/akg_ess/ so the URL is /assets/akg_ess/<file>.
+
+# Web pages — anything under akg_ess/www/<route>/ becomes accessible at /<route>.
+# The PWA index lives at akg_ess/www/ess/index.html and is reachable at /ess.
+
+# ──────────────────────────────────────────────────────────────────────
+# Document Events
+# ──────────────────────────────────────────────────────────────────────
+# When a Geofence Violation is approved, auto-create the matching
+# Employee Checkin so attendance posts to ERPNext only after manager OK.
+doc_events = {
+    "Geofence Violation": {
+        "on_update": "akg_ess.akg_ess.doctype.geofence_violation.geofence_violation.on_status_change",
+    },
+}
+
+# ──────────────────────────────────────────────────────────────────────
+# Fixtures — exported with the app, imported on `bench install-app`.
+# ──────────────────────────────────────────────────────────────────────
+fixtures = [
+    # Custom fields on standard DocTypes (Project geofence + Employee Checkin idempotency)
+    {
+        "doctype": "Custom Field",
+        "filters": [
+            ["name", "in", [
+                "Project-site_latitude",
+                "Project-site_longitude",
+                "Project-site_radius_meters",
+                "Project-akg_geofence_section",
+                "Employee Checkin-latitude",
+                "Employee Checkin-longitude",
+                "Employee Checkin-accuracy_m",
+                "Employee Checkin-project",
+                "Employee Checkin-local_id",
+                "Employee Checkin-akg_location_section",
+                "Leave Application-local_id",
+                "Expense Claim-local_id",
+            ]],
+        ],
+    },
+    # Frappe Realtime fan-out roles for ESS
+    {
+        "doctype": "Role",
+        "filters": [["role_name", "in", ["ESS User", "ESS Manager"]]],
+    },
+]
+
+# ──────────────────────────────────────────────────────────────────────
+# Website
+# ──────────────────────────────────────────────────────────────────────
+# Allow the /ess page to be reached without the standard Frappe website
+# header / footer chrome.  The www/ess/index.html sets no_cache and
+# no_sitemap on its own; this entry just keeps it out of search indexes.
+website_route_rules = []
+
+# ──────────────────────────────────────────────────────────────────────
+# Permissions
+# ──────────────────────────────────────────────────────────────────────
+# Filter the ESS Notification list so users only ever see their own.
+permission_query_conditions = {
+    "ESS Notification": "akg_ess.akg_ess.doctype.ess_notification.ess_notification.get_permission_query_conditions",
+}
+
+has_permission = {
+    "ESS Notification": "akg_ess.akg_ess.doctype.ess_notification.ess_notification.has_permission",
+}

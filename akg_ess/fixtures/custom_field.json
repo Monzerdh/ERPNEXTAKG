@@ -1,0 +1,142 @@
+[
+ {
+  "doctype": "Custom Field",
+  "name": "Project-akg_geofence_section",
+  "dt": "Project",
+  "module": "AKG ESS",
+  "fieldname": "akg_geofence_section",
+  "label": "Site Geofence",
+  "fieldtype": "Section Break",
+  "insert_after": "department",
+  "collapsible": 1
+ },
+ {
+  "doctype": "Custom Field",
+  "name": "Project-site_latitude",
+  "dt": "Project",
+  "module": "AKG ESS",
+  "fieldname": "site_latitude",
+  "label": "Site Latitude",
+  "fieldtype": "Float",
+  "precision": "8",
+  "insert_after": "akg_geofence_section",
+  "description": "Latitude of the site centre. Used by the ESS app to validate check-ins."
+ },
+ {
+  "doctype": "Custom Field",
+  "name": "Project-site_longitude",
+  "dt": "Project",
+  "module": "AKG ESS",
+  "fieldname": "site_longitude",
+  "label": "Site Longitude",
+  "fieldtype": "Float",
+  "precision": "8",
+  "insert_after": "site_latitude"
+ },
+ {
+  "doctype": "Custom Field",
+  "name": "Project-site_radius_meters",
+  "dt": "Project",
+  "module": "AKG ESS",
+  "fieldname": "site_radius_meters",
+  "label": "Site Radius (m)",
+  "fieldtype": "Int",
+  "default": "200",
+  "insert_after": "site_longitude",
+  "description": "Geofence radius in metres. Default 200 m."
+ },
+
+ {
+  "doctype": "Custom Field",
+  "name": "Employee Checkin-akg_location_section",
+  "dt": "Employee Checkin",
+  "module": "AKG ESS",
+  "fieldname": "akg_location_section",
+  "label": "Location",
+  "fieldtype": "Section Break",
+  "insert_after": "device_id",
+  "collapsible": 1
+ },
+ {
+  "doctype": "Custom Field",
+  "name": "Employee Checkin-latitude",
+  "dt": "Employee Checkin",
+  "module": "AKG ESS",
+  "fieldname": "latitude",
+  "label": "Latitude",
+  "fieldtype": "Float",
+  "precision": "8",
+  "insert_after": "akg_location_section"
+ },
+ {
+  "doctype": "Custom Field",
+  "name": "Employee Checkin-longitude",
+  "dt": "Employee Checkin",
+  "module": "AKG ESS",
+  "fieldname": "longitude",
+  "label": "Longitude",
+  "fieldtype": "Float",
+  "precision": "8",
+  "insert_after": "latitude"
+ },
+ {
+  "doctype": "Custom Field",
+  "name": "Employee Checkin-accuracy_m",
+  "dt": "Employee Checkin",
+  "module": "AKG ESS",
+  "fieldname": "accuracy_m",
+  "label": "GPS Accuracy (m)",
+  "fieldtype": "Int",
+  "insert_after": "longitude"
+ },
+ {
+  "doctype": "Custom Field",
+  "name": "Employee Checkin-project",
+  "dt": "Employee Checkin",
+  "module": "AKG ESS",
+  "fieldname": "project",
+  "label": "Project",
+  "fieldtype": "Link",
+  "options": "Project",
+  "insert_after": "accuracy_m",
+  "description": "Project the employee was working on at this checkin."
+ },
+ {
+  "doctype": "Custom Field",
+  "name": "Employee Checkin-local_id",
+  "dt": "Employee Checkin",
+  "module": "AKG ESS",
+  "fieldname": "local_id",
+  "label": "Client Local ID",
+  "fieldtype": "Data",
+  "unique": 1,
+  "insert_after": "project",
+  "description": "Idempotency key from the offline outbox. Prevents duplicate posts on retry."
+ },
+
+ {
+  "doctype": "Custom Field",
+  "name": "Leave Application-local_id",
+  "dt": "Leave Application",
+  "module": "AKG ESS",
+  "fieldname": "local_id",
+  "label": "Client Local ID",
+  "fieldtype": "Data",
+  "unique": 1,
+  "insert_after": "company",
+  "description": "Idempotency key from the offline outbox."
+ },
+
+ {
+  "doctype": "Custom Field",
+  "name": "Expense Claim-local_id",
+  "dt": "Expense Claim",
+  "module": "AKG ESS",
+  "fieldname": "local_id",
+  "label": "Client Local ID",
+  "fieldtype": "Data",
+  "unique": 1,
+  "insert_after": "company",
+  "description": "Idempotency key from the offline outbox."
+ }
+]
