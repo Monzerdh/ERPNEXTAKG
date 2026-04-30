@@ -2,7 +2,7 @@ import frappe
 from frappe.model.document import Document
 
 
-class PettyCashTopupRequest(Document):
+class PettyCashTopUpRequest(Document):
     def before_insert(self):
         if not self.status:
             self.status = "Pending"
