@@ -196,7 +196,11 @@ function NewClaimSheet({ open, onClose, geofenceMode, onSubmit, isOffline, setOf
     })();
     return () => { cancelled = true; };
   }, [open]);
-  const defaultCC = (window.SITES || []).find((s) => s.name === currentSite)?.cost_center || 'CC-ADMIN-HQ';
+  // If we matched a site, use its cost center. Otherwise leave blank — the
+  // server will fall back to the company default cost center on Expense
+  // Claim insert. Hardcoding a name here would 400 on sites that don't
+  // happen to have that cost center.
+  const defaultCC = (window.SITES || []).find((s) => s.name === currentSite)?.cost_center || '';
   const defaultProject = currentSite || '';
 
   const onPick = async (e) => {

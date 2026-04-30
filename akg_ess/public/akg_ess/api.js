@@ -230,8 +230,8 @@
     async getGeofenceViolations() {
       return listResource('Geofence Violation', {
         fields: ['name', 'employee', 'employee_name', 'log_type', 'time', 'date', 'latitude', 'longitude',
-                 'distance_m', 'nearest_site', 'selected_project', 'reason', 'status', 'manager_notes',
-                 'approver', 'approved_on', 'linked_checkin'],
+                 'accuracy_m', 'distance_m', 'nearest_site', 'selected_project', 'reason', 'status',
+                 'manager_notes', 'approver', 'approved_on', 'linked_checkin'],
         orderBy: 'time desc',
         limit: 100,
       }).catch(() => []);
@@ -241,7 +241,7 @@
       return listResource('Geofence Violation', {
         filters: [['status', '=', 'Pending']],
         fields: ['name', 'employee', 'employee_name', 'log_type', 'time', 'date', 'latitude', 'longitude',
-                 'distance_m', 'nearest_site', 'selected_project', 'reason'],
+                 'accuracy_m', 'distance_m', 'nearest_site', 'selected_project', 'reason'],
         orderBy: 'time desc',
         limit: 100,
       }).catch(() => []);

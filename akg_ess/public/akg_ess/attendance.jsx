@@ -613,61 +613,28 @@ function CheckoutModal({ project, activityTypes, sites, onCancel, onConfirm, loa
   );
 }
 
-// ─── Mini map (unchanged) ──────────────────────────────────────────────
+// ─── Mini map ──────────────────────────────────────────────────────────
+// Real OSM tiles via Leaflet (see LeafletMap in ui.jsx). The previous
+// hand-drawn SVG schematic is gone — it looked decorative but didn't show
+// real geography, which surprised users who didn't know which way was north.
 function MiniMap({ sites, myPos, match }) {
   const t = useT();
-  const span = 0.08;
-  // No GPS fix yet — render an empty placeholder rather than crash on null.
-  if (!myPos || myPos.lat == null || myPos.lng == null) {
-    return <div className="mini-map" style={{ display: 'grid', placeItems: 'center', color: 'var(--text-muted)', fontSize: 12 }}>{t.location}…</div>;
-  }
-  const project = (lat, lng) => {
-    const x = ((lng - myPos.lng + span / 2) / span) * 100;
-    const y = ((myPos.lat - lat + span / 2) / span) * 100;
-    return [Math.max(2, Math.min(98, x)), Math.max(2, Math.min(98, y))];
-  };
-
+  // Centre the map on the matched site if we're inside one, else on the
+  // user's current position, else let LeafletMap fit bounds across all sites.
+  const center = match.inside && match.site
+    ? { lat: match.site.lat ?? match.site.site_latitude, lng: match.site.lng ?? match.site.site_longitude }
+    : (myPos && myPos.lat != null ? { lat: myPos.lat, lng: myPos.lng } : null);
   return (
-    <div className="mini-map">
-      <div className="mini-map-grid" />
-      <svg width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="none" style={{ position: 'absolute', inset: 0 }}>
-        <path d="M-5 30 Q 30 45 50 40 T 105 50" stroke="rgba(255,255,255,.7)" strokeWidth="3" fill="none" />
-        <path d="M20 -5 Q 40 30 35 60 T 50 105" stroke="rgba(255,255,255,.5)" strokeWidth="2" fill="none" />
-        <path d="M-5 75 Q 40 70 70 80 T 105 78" stroke="rgba(255,255,255,.6)" strokeWidth="2.5" fill="none" />
-      </svg>
-      {sites.map((s) => {
-        const [x, y] = project(s.lat, s.lng);
-        const radPx = Math.min(60, (s.radius_m / 8000) * 100 + 12);
-        const isMatch = match.inside && match.site?.name === s.name;
-        return (
-          <React.Fragment key={s.name}>
-            <div style={{
-              position: 'absolute', left: `${x}%`, top: `${y}%`,
-              width: radPx, height: radPx,
-              transform: 'translate(-50%, -50%)',
-              borderRadius: '50%',
-              background: isMatch ? 'rgba(21,128,61,.18)' : 'rgba(30,58,95,.12)',
-              border: `1.5px ${isMatch ? 'solid' : 'dashed'} ${isMatch ? 'var(--ok)' : 'var(--navy-700)'}`,
-            }} />
-            <div style={{
-              position: 'absolute', left: `${x}%`, top: `${y}%`,
-              transform: 'translate(-50%, -50%)',
-              color: isMatch ? 'var(--ok)' : 'var(--navy-800)',
-            }}>
-              <Icon name="pinFill" size={20} />
-            </div>
-          </React.Fragment>
-        );
-      })}
-      <div style={{
-        position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%, -50%)',
-        width: 18, height: 18, borderRadius: '50%',
-        background: '#2563EB', border: '3px solid white',
-        boxShadow: '0 0 0 4px rgba(37,99,235,.25), 0 2px 8px rgba(0,0,0,.2)',
-        animation: 'pulse 2s infinite',
-      }} />
-      <style>{`@keyframes pulse { 0%,100%{box-shadow:0 0 0 4px rgba(37,99,235,.25),0 2px 8px rgba(0,0,0,.2)} 50%{box-shadow:0 0 0 10px rgba(37,99,235,.1),0 2px 8px rgba(0,0,0,.2)}}`}</style>
-    </div>
+    <LeafletMap
+      sites={sites}
+      userPos={myPos && myPos.lat != null ? myPos : null}
+      userLabel={t.location}
+      center={center}
+      zoom={15}
+      height={220}
+      interactive={false}
+      highlight={match.inside ? match.site?.name : null}
+    />
   );
 }
 

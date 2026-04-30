@@ -178,6 +178,24 @@ function GeofenceViolations() {
                       "{x.reason}"
                     </div>
 
+                    {/* Real OSM map: employee position vs site centre + geofence circle */}
+                    {(x.actual_lat ?? x.latitude) != null && site && (
+                      <div style={{ marginTop: 10 }}>
+                        <LeafletMap
+                          sites={[site]}
+                          userPos={{
+                            lat: x.actual_lat ?? x.latitude,
+                            lng: x.actual_lng ?? x.longitude,
+                            accuracy: x.accuracy_m,
+                          }}
+                          userLabel={x.employee_name}
+                          height={160}
+                          interactive={false}
+                          highlight={null}
+                        />
+                      </div>
+                    )}
+
                     {x.status !== 'Pending' && x.approver_comment && (
                       <div style={{ marginTop: 8, fontSize: 11, color: 'var(--text-muted)' }}>
                         <strong>{x.approver}:</strong> {x.approver_comment}
@@ -215,8 +233,8 @@ function GeofenceViolations() {
 
 function LoginScreen({ onSignIn, lang, setLanguage }) {
   const t = useT();
-  const [usr, setUsr] = React.useState('faisal.h@akg.ae');
-  const [pwd, setPwd] = React.useState('demo1234');
+  const [usr, setUsr] = React.useState('');
+  const [pwd, setPwd] = React.useState('');
   const [err, setErr] = React.useState('');
   const [busy, setBusy] = React.useState(false);
 
@@ -276,7 +294,7 @@ function LoginScreen({ onSignIn, lang, setLanguage }) {
         </button>
       </form>
       <div style={{ textAlign: 'center', marginTop: 'auto', paddingTop: 24, fontSize: 11, color: 'rgba(255,255,255,.5)' }}>
-        Powered by Munzer APPs · {window.location.host || 'demo'}
+        Powered by Munzer APPs · {window.location.host}
       </div>
     </div>
   );

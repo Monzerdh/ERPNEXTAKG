@@ -200,7 +200,8 @@ function LeaveRow({ l, onClick }) {
 function NewLeaveSheet({ open, onClose, balances, onSubmit, isOffline, setOfflineQueue }) {
   const t = useT();
   const toast = useToast();
-  const [type, setType] = React.useState('Annual Leave');
+  const defaultType = (balances && balances[0] && balances[0].leave_type) || '';
+  const [type, setType] = React.useState(defaultType);
   const [from, setFrom] = React.useState('');
   const [to, setTo] = React.useState('');
   const [halfDay, setHalfDay] = React.useState(false);
@@ -211,9 +212,13 @@ function NewLeaveSheet({ open, onClose, balances, onSubmit, isOffline, setOfflin
     if (open) {
       const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1);
       const iso = tomorrow.toISOString().slice(0, 10);
-      setFrom(iso); setTo(iso); setHalfDay(false); setReason(''); setType('Annual Leave');
+      // Default to the first available leave type for THIS user — no more
+      // hardcoded "Annual Leave" that breaks on companies using different
+      // leave-type names.
+      const initialType = (balances && balances[0] && balances[0].leave_type) || '';
+      setFrom(iso); setTo(iso); setHalfDay(false); setReason(''); setType(initialType);
     }
-  }, [open]);
+  }, [open, balances]);
 
   const selectedBal = balances.find((b) => b.leave_type === type);
   const rawDays = from && to ? Math.max(1, Math.round((+new Date(to) - +new Date(from)) / 86400000) + 1) : 0;
@@ -221,7 +226,7 @@ function NewLeaveSheet({ open, onClose, balances, onSubmit, isOffline, setOfflin
   const insufficient = selectedBal && requestDays > selectedBal.leave_balance;
 
   const submit = async () => {
-    if (!from || !to || !reason.trim() || insufficient) return;
+    if (!from || !to || !reason.trim() || insufficient || !type) return;
     setBusy(true);
     const payload = {
       leave_type: type,
@@ -248,7 +253,7 @@ function NewLeaveSheet({ open, onClose, balances, onSubmit, isOffline, setOfflin
     <Sheet open={open} onClose={onClose} title={t.new_request}
       footer={<>
         <button className="btn btn-ghost" onClick={onClose}>{t.cancel}</button>
-        <button className="btn btn-primary" onClick={submit} disabled={busy || !reason.trim() || insufficient}>
+        <button className="btn btn-primary" onClick={submit} disabled={busy || !reason.trim() || insufficient || !type}>
           {busy ? <span className="spinner" /> : `${t.submit} · ${fmtDays(requestDays)} ${t.days}`}
         </button>
       </>}>

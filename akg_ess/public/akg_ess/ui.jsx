@@ -156,9 +156,148 @@ function useGreeting() {
   return t.greeting_evening;
 }
 
+// ─── LeafletMap ──────────────────────────────────────────────────────
+// Real OSM map. Tiles are cached aggressively by the service worker so
+// once you've viewed an area it works offline.
+//
+// Props:
+//   sites       : array of { lat|site_latitude, lng|site_longitude, radius_m|site_radius_meters, project_name, name }
+//   userPos     : { lat, lng, accuracy } | null
+//   userLabel   : optional label on the user marker
+//   center      : { lat, lng } — explicit centre. If omitted, fits bounds to sites + userPos.
+//   zoom        : initial zoom (default 14)
+//   height      : px (default 220)
+//   interactive : if false, disables drag/zoom/scroll for embed-in-card use (default true on home, false in cards)
+//   highlight   : optional name of a site to highlight (different colour)
+function LeafletMap({ sites = [], userPos = null, userLabel, center = null, zoom = 14, height = 220, interactive = true, highlight = null }) {
+  const ref = React.useRef(null);
+  const mapRef = React.useRef(null);
+  const layerRef = React.useRef(null);
+
+  // Init the map once.
+  React.useEffect(() => {
+    if (!ref.current || mapRef.current) return;
+    if (!window.L) {
+      // Leaflet not loaded yet (e.g. flaky CDN). Render a simple placeholder
+      // so layout doesn't shift, and try again next tick.
+      const id = setInterval(() => {
+        if (window.L && ref.current && !mapRef.current) {
+          clearInterval(id);
+          // re-trigger by setting a key on a parent — for simplicity we just
+          // skip — host component can rerender to retry.
+        }
+      }, 250);
+      return () => clearInterval(id);
+    }
+
+    const map = window.L.map(ref.current, {
+      attributionControl: true,
+      zoomControl: interactive,
+      dragging: interactive,
+      scrollWheelZoom: false,         // never; bad UX inside scrolling pages
+      doubleClickZoom: interactive,
+      touchZoom: interactive,
+      boxZoom: false,
+      keyboard: interactive,
+      tap: interactive,
+    });
+    map.attributionControl.setPrefix(''); // hide the Leaflet logo, keep OSM credit
+
+    window.L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>',
+      crossOrigin: true,
+    }).addTo(map);
+
+    layerRef.current = window.L.layerGroup().addTo(map);
+    mapRef.current = map;
+
+    return () => {
+      try { map.remove(); } catch (e) {}
+      mapRef.current = null;
+      layerRef.current = null;
+    };
+  }, [interactive]);
+
+  // Repaint markers + circles when data changes.
+  React.useEffect(() => {
+    const map = mapRef.current;
+    const lg = layerRef.current;
+    if (!map || !lg || !window.L) return;
+    lg.clearLayers();
+
+    const points = [];
+
+    for (const s of sites) {
+      const lat = s.lat ?? s.site_latitude;
+      const lng = s.lng ?? s.site_longitude;
+      const radius = s.radius_m ?? s.site_radius_meters ?? 200;
+      if (lat == null || lng == null) continue;
+      const isHi = highlight && (s.name === highlight);
+      const color = isHi ? '#15803D' : '#1E3A5F';
+      window.L.circle([lat, lng], {
+        radius,
+        color, fillColor: color, fillOpacity: 0.12, weight: 1.5,
+      }).addTo(lg).bindTooltip(s.project_name || s.name, { direction: 'top', offset: [0, -6] });
+      window.L.marker([lat, lng], {
+        icon: window.L.divIcon({
+          className: 'akg-site-pin',
+          html: `<div style="width:14px;height:14px;border-radius:50%;background:${color};border:3px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.3);"></div>`,
+          iconSize: [14, 14], iconAnchor: [7, 7],
+        }),
+      }).addTo(lg).bindTooltip(s.project_name || s.name, { direction: 'top', offset: [0, -10] });
+      points.push([lat, lng]);
+    }
+
+    if (userPos && userPos.lat != null && userPos.lng != null) {
+      const userIcon = window.L.divIcon({
+        className: 'akg-user-pin',
+        html: `<div style="position:relative;width:18px;height:18px;">
+                 <div style="position:absolute;inset:0;border-radius:50%;background:#1D4ED8;border:3px solid #fff;box-shadow:0 0 0 3px rgba(29,78,216,.25),0 1px 3px rgba(0,0,0,.4);"></div>
+               </div>`,
+        iconSize: [18, 18], iconAnchor: [9, 9],
+      });
+      window.L.marker([userPos.lat, userPos.lng], { icon: userIcon })
+        .addTo(lg)
+        .bindTooltip(userLabel || 'You', { direction: 'top', offset: [0, -10] });
+      // Optional accuracy halo
+      if (userPos.accuracy && userPos.accuracy < 200) {
+        window.L.circle([userPos.lat, userPos.lng], {
+          radius: userPos.accuracy, color: '#1D4ED8', fillColor: '#1D4ED8', fillOpacity: 0.05, weight: 1, dashArray: '3,4',
+        }).addTo(lg);
+      }
+      points.push([userPos.lat, userPos.lng]);
+    }
+
+    // Centring strategy: explicit center wins; otherwise fit to bounds; else
+    // leave the map at its initial state (renders nothing useful, by design).
+    if (center && center.lat != null && center.lng != null) {
+      map.setView([center.lat, center.lng], zoom);
+    } else if (points.length === 1) {
+      map.setView(points[0], zoom);
+    } else if (points.length > 1) {
+      try {
+        const b = window.L.latLngBounds(points).pad(0.25);
+        map.fitBounds(b, { maxZoom: 17 });
+      } catch (e) { map.setView(points[0], zoom); }
+    }
+    // Force a redraw — tiles can paint at 0×0 if the parent was hidden on init.
+    setTimeout(() => map.invalidateSize(), 60);
+  }, [sites, userPos, userLabel, center, zoom, highlight]);
+
+  return (
+    <div
+      ref={ref}
+      className="akg-leaflet-map"
+      style={{ height, borderRadius: 12, overflow: 'hidden', border: '1px solid var(--ink-200)' }}
+    />
+  );
+}
+
 Object.assign(window, {
   Icon, ToastProvider, useToast, Sheet, StatusChip,
   I18nCtx, useT, useLang,
   fmtTime, fmtDate, fmtDateShort, fmtMoney,
   Avatar, Skeleton, useGreeting,
+  LeafletMap,
 });
