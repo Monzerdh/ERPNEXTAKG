@@ -29,7 +29,7 @@
   {"fieldname": "body", "fieldtype": "Small Text", "label": "Body", "in_list_view": 1},
   {"fieldname": "target_tab", "fieldtype": "Select", "options": "\nattendance\nleaves\npetty\nprofile", "label": "Target Tab"},
   {"fieldname": "target_id", "fieldtype": "Data", "label": "Target ID", "description": "Document name to focus when the user taps the notification."},
-  {"fieldname": "is_read", "fieldtype": "Check", "label": "Read", "default": "0", "in_list_view": 1, "in_standard_filter": 1},
+  {"fieldname": "is_read", "fieldtype": "Check", "label": "Read", "default": 0, "in_list_view": 1, "in_standard_filter": 1},
   {"fieldname": "read_on", "fieldtype": "Datetime", "label": "Read On", "read_only": 1},
   {"fieldname": "section_break_1", "fieldtype": "Section Break", "label": "Payload", "collapsible": 1},
   {"fieldname": "payload", "fieldtype": "Long Text", "label": "Payload (JSON)", "description": "Optional structured payload (JSON-encoded) for the client."}

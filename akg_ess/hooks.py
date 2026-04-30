@@ -55,6 +55,14 @@ fixtures = [
 ]
 
 # ──────────────────────────────────────────────────────────────────────
+# Website
+# ──────────────────────────────────────────────────────────────────────
+# Allow the /ess page to be reached without the standard Frappe website
+# header / footer chrome.  The www/ess/index.html sets no_cache and
+# no_sitemap on its own; this entry just keeps it out of search indexes.
+website_route_rules = []
+
+# ──────────────────────────────────────────────────────────────────────
 # Permissions
 # ──────────────────────────────────────────────────────────────────────
 # Filter the ESS Notification list so users only ever see their own.
