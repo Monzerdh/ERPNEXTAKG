@@ -115,16 +115,17 @@ These are added by the `custom_field.json` fixture. Manual creation: *Setup → 
 | `site_longitude`       | Float (p=8)   | `site_latitude`       | Site centre longitude.                      |
 | `site_radius_meters`   | Int           | `site_longitude`      | Default `200`. Geofence radius in metres.   |
 
-### 2.2 `Employee Checkin` — location + idempotency
+### 2.2 `Employee Checkin` — extras (location is provided by standard fields)
 
-| Fieldname               | Type           | Insert After             | Notes                                |
-|-------------------------|----------------|--------------------------|--------------------------------------|
-| `akg_location_section`  | Section Break  | `device_id`              | Collapsible. Label: *Location*.      |
-| `latitude`              | Float (p=8)    | `akg_location_section`   |                                      |
-| `longitude`             | Float (p=8)    | `latitude`               |                                      |
-| `accuracy_m`            | Int            | `longitude`              |                                      |
-| `project`               | Link → Project | `accuracy_m`             |                                      |
-| `local_id`              | Data, Unique   | `project`                | Offline outbox idempotency key.      |
+> **Note:** Frappe v15+ already ships `latitude`, `longitude`, `geolocation`,
+> and `location_section` as standard fields on `Employee Checkin`. We write
+> directly to those — only the *additional* fields below are added by AKG ESS.
+
+| Fieldname     | Type           | Insert After  | Notes                                |
+|---------------|----------------|---------------|--------------------------------------|
+| `accuracy_m`  | Int            | `longitude`   | GPS horizontal accuracy in metres.   |
+| `project`     | Link → Project | `accuracy_m`  | Site the employee was working on.    |
+| `local_id`    | Data, Unique   | `project`     | Offline outbox idempotency key.      |
 
 ### 2.3 `Leave Application`
 

@@ -48,46 +48,14 @@
 
  {
   "doctype": "Custom Field",
-  "name": "Employee Checkin-akg_location_section",
-  "dt": "Employee Checkin",
-  "module": "AKG ESS",
-  "fieldname": "akg_location_section",
-  "label": "Location",
-  "fieldtype": "Section Break",
-  "insert_after": "device_id",
-  "collapsible": 1
- },
- {
-  "doctype": "Custom Field",
-  "name": "Employee Checkin-latitude",
-  "dt": "Employee Checkin",
-  "module": "AKG ESS",
-  "fieldname": "latitude",
-  "label": "Latitude",
-  "fieldtype": "Float",
-  "precision": "8",
-  "insert_after": "akg_location_section"
- },
- {
-  "doctype": "Custom Field",
-  "name": "Employee Checkin-longitude",
-  "dt": "Employee Checkin",
-  "module": "AKG ESS",
-  "fieldname": "longitude",
-  "label": "Longitude",
-  "fieldtype": "Float",
-  "precision": "8",
-  "insert_after": "latitude"
- },
- {
-  "doctype": "Custom Field",
   "name": "Employee Checkin-accuracy_m",
   "dt": "Employee Checkin",
   "module": "AKG ESS",
   "fieldname": "accuracy_m",
   "label": "GPS Accuracy (m)",
   "fieldtype": "Int",
-  "insert_after": "longitude"
+  "insert_after": "longitude",
+  "description": "GPS horizontal accuracy in metres reported by the client."
  },
  {
   "doctype": "Custom Field",

@@ -32,16 +32,13 @@ fixtures = [
         "doctype": "Custom Field",
         "filters": [
             ["name", "in", [
+                "Project-akg_geofence_section",
                 "Project-site_latitude",
                 "Project-site_longitude",
                 "Project-site_radius_meters",
-                "Project-akg_geofence_section",
-                "Employee Checkin-latitude",
-                "Employee Checkin-longitude",
                 "Employee Checkin-accuracy_m",
                 "Employee Checkin-project",
                 "Employee Checkin-local_id",
-                "Employee Checkin-akg_location_section",
                 "Leave Application-local_id",
                 "Expense Claim-local_id",
             ]],
