@@ -243,10 +243,15 @@ function NewLeaveSheet({ open, onClose, balances, onSubmit, isOffline, setOfflin
       onClose();
       return;
     }
-    const r = await window.frappe.submitLeave(payload);
-    setBusy(false);
-    onSubmit(r);
-    onClose();
+    try {
+      const r = await window.frappe.submitLeave(payload);
+      onSubmit(r);
+      onClose();
+    } catch (e) {
+      toast(e.message || 'Failed to submit leave request', 'bad');
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (

@@ -277,10 +277,15 @@ function NewClaimSheet({ open, onClose, geofenceMode, onSubmit, isOffline, setOf
       onClose();
       return;
     }
-    const row = await window.frappe.submitClaim(payload);
-    setBusy(false);
-    onSubmit(row);
-    onClose();
+    try {
+      const row = await window.frappe.submitClaim(payload);
+      onSubmit(row);
+      onClose();
+    } catch (e) {
+      toast(e.message || 'Failed to submit claim', 'bad');
+    } finally {
+      setBusy(false);
+    }
   };
 
   const total = expenses.reduce((s, r) => s + (parseFloat(r.amount) || 0), 0);
@@ -571,6 +576,7 @@ function ExpenseLineView({ e }) {
 // ─── Top-up ──────────────────────────────────────────────────────────────
 function TopupSheet({ open, onClose, onSubmit }) {
   const t = useT();
+  const toast = useToast();
   const [amount, setAmount] = React.useState('');
   const [reason, setReason] = React.useState('');
   const [busy, setBusy] = React.useState(false);
@@ -578,9 +584,15 @@ function TopupSheet({ open, onClose, onSubmit }) {
   const submit = async () => {
     if (!amount || parseFloat(amount) <= 0) return;
     setBusy(true);
-    await window.frappe.requestTopup(parseFloat(amount), reason);
-    onSubmit();
-    onClose();
+    try {
+      await window.frappe.requestTopup(parseFloat(amount), reason);
+      onSubmit();
+      onClose();
+    } catch (e) {
+      toast(e.message || 'Failed to submit top-up request', 'bad');
+    } finally {
+      setBusy(false);
+    }
   };
   return (
     <Sheet open={open} onClose={onClose} title={t.request_topup}
