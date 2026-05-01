@@ -124,7 +124,7 @@ function LeavesScreen({ role, isOffline = false, offlineQueue = [], setOfflineQu
         </>
       )}
 
-      <NewLeaveSheet open={showNew} onClose={() => setShowNew(false)} balances={balances} isOffline={isOffline} setOfflineQueue={setOfflineQueue} onSubmit={(r) => { setMine((m) => [r, ...m]); load(); toast(`${t.new_request} ${t.submitted.toLowerCase()}`, 'ok'); }} />ok'); }} />
+      <NewLeaveSheet open={showNew} onClose={() => setShowNew(false)} balances={balances} isOffline={isOffline} setOfflineQueue={setOfflineQueue} onSubmit={(r) => { setMine((m) => [r, ...m]); load(); toast(`${t.new_request} ${t.submitted.toLowerCase()}`, 'ok'); }} />
       <ReviewLeaveSheet item={reviewing} onClose={() => setReviewing(null)} onAct={(action, comment) => {
         const fn = action === 'approve' ? window.frappe.approveLeave : window.frappe.rejectLeave;
         fn(reviewing.name, comment).then(() => { load(); setReviewing(null); toast(`${action === 'approve' ? t.approved : t.rejected}`, action === 'approve' ? 'ok' : 'warn'); });
