@@ -248,49 +248,89 @@ def extract_receipt(data_url):
     if m:
         media_type = m.group(1)
 
-    try:
-        # Lazy import so the app can be installed on benches without anthropic.
-        try:
-            from anthropic import Anthropic
-        except ImportError:
-            frappe.log_error(
-                "anthropic SDK not installed. Run `bench pip install anthropic` to enable receipt OCR.",
-                "AKG ESS · OCR",
-            )
-            return _empty_payload()
-
-        client = Anthropic(api_key=api_key)
-        msg = client.messages.create(
-            model=settings["model"],
-            max_tokens=512,
-            messages=[
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": OCR_PROMPT},
-                        {"type": "image", "source": {"type": "base64", "media_type": media_type, "data": b64}},
-                    ],
-                }
-            ],
+    # Anthropic only accepts image/jpeg, image/png, image/gif, image/webp.
+    if media_type not in ("image/jpeg", "image/png", "image/gif", "image/webp"):
+        frappe.log_error(
+            f"Anthropic vision rejects media_type={media_type}. Convert to jpg/png before upload.",
+            "AKG ESS · OCR media",
         )
-        text = "".join(getattr(b, "text", "") for b in (msg.content or []))
-        parsed = _parse_json_block(text)
-        if not parsed:
-            return _empty_payload()
-
-        out = _empty_payload()
-        for k in out:
-            if k in parsed:
-                out[k] = parsed[k]
-        try:
-            out["amount"] = float(out.get("amount") or 0)
-        except (TypeError, ValueError):
-            out["amount"] = 0
-        try:
-            out["vat_amount"] = float(out.get("vat_amount") or 0)
-        except (TypeError, ValueError):
-            out["vat_amount"] = 0
-        return out
-    except Exception:
-        frappe.log_error(frappe.get_traceback(), "AKG ESS · OCR failure")
         return _empty_payload()
+
+    # Use the HTTP API directly via requests (a Frappe runtime dep — no
+    # extra `bench pip install anthropic` step needed on Frappe Cloud).
+    import requests
+    try:
+        resp = requests.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={
+                "x-api-key": api_key,
+                "anthropic-version": "2023-06-01",
+                "content-type": "application/json",
+            },
+            json={
+                "model": settings["model"],
+                "max_tokens": 512,
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": OCR_PROMPT},
+                            {"type": "image", "source": {"type": "base64", "media_type": media_type, "data": b64}},
+                        ],
+                    }
+                ],
+            },
+            timeout=45,
+        )
+    except requests.exceptions.RequestException as e:
+        frappe.log_error(
+            f"Anthropic request failed at network layer: {e!r}",
+            "AKG ESS · OCR network",
+        )
+        return _empty_payload()
+
+    if resp.status_code != 200:
+        # Most common causes: 401 (bad key), 404 (bad model name), 400
+        # (malformed image), 429 (rate limit), 529 (overloaded).
+        snippet = (resp.text or "")[:1500]
+        frappe.log_error(
+            f"Anthropic HTTP {resp.status_code} on /v1/messages\n\n"
+            f"Model: {settings['model']}\n"
+            f"Response body:\n{snippet}",
+            "AKG ESS · OCR HTTP",
+        )
+        return _empty_payload()
+
+    try:
+        data = resp.json()
+    except ValueError:
+        frappe.log_error(
+            f"Anthropic response not JSON: {resp.text[:1500]}",
+            "AKG ESS · OCR JSON",
+        )
+        return _empty_payload()
+
+    blocks = data.get("content") or []
+    text = "".join(b.get("text", "") for b in blocks if isinstance(b, dict) and b.get("type") == "text")
+    parsed = _parse_json_block(text)
+    if not parsed:
+        frappe.log_error(
+            f"Anthropic returned no parseable JSON object.\n\n"
+            f"Raw text from model:\n{text[:1500]}",
+            "AKG ESS · OCR parse",
+        )
+        return _empty_payload()
+
+    out = _empty_payload()
+    for k in out:
+        if k in parsed:
+            out[k] = parsed[k]
+    try:
+        out["amount"] = float(out.get("amount") or 0)
+    except (TypeError, ValueError):
+        out["amount"] = 0
+    try:
+        out["vat_amount"] = float(out.get("vat_amount") or 0)
+    except (TypeError, ValueError):
+        out["vat_amount"] = 0
+    return out
