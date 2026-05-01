@@ -138,6 +138,26 @@
   const todayISO = () => new Date().toISOString().slice(0, 10);
   const localId = () => `LID-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
+  // Stable per-leave-type accent.  Standard names (Annual / Sick / Casual /
+  // Hajj / Maternity / Compensatory / LWP) get hand-picked colours that
+  // match the AKG ESS palette.  Anything else is hashed into a 7-colour
+  // fallback so similar names always get the same swatch.
+  function leaveTypeColor(name) {
+    const lower = (name || '').toLowerCase();
+    if (lower.includes('annual'))                                  return '#1E40AF'; // blue
+    if (lower.includes('sick'))                                    return '#B91C1C'; // red
+    if (lower.includes('casual'))                                  return '#15803D'; // green
+    if (lower.includes('hajj') || lower.includes('umrah'))         return '#7C3AED'; // purple
+    if (lower.includes('matern') || lower.includes('patern'))      return '#DB2777'; // pink
+    if (lower.includes('compensatory') || lower.includes('comp '))  return '#EA580C'; // orange
+    if (lower.includes('lwp') || lower.includes('without pay'))    return '#64748B'; // slate
+    if (lower.includes('study') || lower.includes('education'))    return '#0E7490'; // teal
+    let h = 0;
+    for (const ch of name || '') h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+    const palette = ['#1E40AF', '#B91C1C', '#15803D', '#7C3AED', '#DB2777', '#EA580C', '#0E7490'];
+    return palette[h % palette.length];
+  }
+
   // ───────────────────────────────────────────────────────────────────
   // window.frappe (1:1 with the prototype's surface)
   // ───────────────────────────────────────────────────────────────────
@@ -325,7 +345,7 @@
       const today = todayISO();
       const allocs = await listResource('Leave Allocation', {
         filters: [['employee', '=', u.employee], ['from_date', '<=', today], ['to_date', '>=', today], ['docstatus', '=', 1]],
-        fields: ['leave_type', 'total_leaves_allocated', 'from_date', 'to_date'],
+        fields: ['leave_type', 'total_leaves_allocated', 'unused_leaves', 'from_date', 'to_date'],
         limit: 0,
       }).catch(() => []);
       const out = [];
@@ -356,6 +376,16 @@
           leaves_taken,
           leaves_pending_approval,
           leave_balance: bal,
+          // Visual metadata used by the BalanceCard component:
+          //  - color is a stable per-leave-type accent driving the left
+          //    strip, the big-number colour, and the progress-bar fill.
+          //  - carry_forward is the Leave Allocation's unused_leaves count
+          //    rolled over from the previous period.  Renders as '+N CF'.
+          //  - allow_half_day toggles the '½-day' chip; we always show it
+          //    because Leave Application supports half-day on every type.
+          color: leaveTypeColor(a.leave_type),
+          carry_forward: parseFloat(a.unused_leaves) || 0,
+          allow_half_day: true,
         });
       }
       return out;
