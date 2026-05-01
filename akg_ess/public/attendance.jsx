@@ -562,26 +562,37 @@ function CheckoutModal({ project, activityTypes, sites, onCancel, onConfirm, loa
 
           <div style={{ marginTop: 18 }}>
             <label className="field-label">{t.activity_type}</label>
-            <div className="seg" role="tablist">
-              {activityTypes.slice(0, 4).map((a) => (
-                <button
-                  key={a.name}
-                  type="button"
-                  className={`seg-btn ${activity === a.name ? 'active' : ''}`}
-                  onClick={() => setActivity(a.name)}
+            {activityTypes.length === 0 ? (
+              <div className="empty-inline" style={{ fontSize: 12, color: 'var(--text-muted)', padding: '10px 12px', background: 'var(--ink-50)', borderRadius: 8, lineHeight: 1.4 }}>
+                No activity types configured yet. Ask an admin to add some at
+                {' '}<a href="/app/activity-type" target="_blank" rel="noopener" style={{ color: 'var(--brand)', textDecoration: 'underline' }}>Setup → Activity Type</a>.
+                You can still check out — activity will be left blank.
+              </div>
+            ) : (
+              <>
+                <div className="seg" role="tablist">
+                  {activityTypes.slice(0, 4).map((a) => (
+                    <button
+                      key={a.name}
+                      type="button"
+                      className={`seg-btn ${activity === a.name ? 'active' : ''}`}
+                      onClick={() => setActivity(a.name)}
+                    >
+                      {a.name}
+                    </button>
+                  ))}
+                </div>
+                <select
+                  className="select"
+                  value={activity}
+                  onChange={(e) => setActivity(e.target.value)}
+                  style={{ marginTop: 8 }}
                 >
-                  {a.name}
-                </button>
-              ))}
-            </div>
-            <select
-              className="select"
-              value={activity}
-              onChange={(e) => setActivity(e.target.value)}
-              style={{ marginTop: 8 }}
-            >
-              {activityTypes.map((a) => <option key={a.name} value={a.name}>{a.name}{a.billable ? ' · billable' : ''}</option>)}
-            </select>
+                  <option value="">— Select activity —</option>
+                  {activityTypes.map((a) => <option key={a.name} value={a.name}>{a.name}{a.billable ? ' · billable' : ''}</option>)}
+                </select>
+              </>
+            )}
           </div>
 
           <div style={{ marginTop: 14 }}>

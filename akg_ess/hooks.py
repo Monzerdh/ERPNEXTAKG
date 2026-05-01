@@ -13,6 +13,12 @@ app_license = "MIT"
 # The PWA index lives at akg_ess/www/ess/index.html and is reachable at /ess.
 
 # ──────────────────────────────────────────────────────────────────────
+# Install hook — seeds default Activity Types so the Check-out modal
+# isn't empty on a fresh install.  Idempotent — safe to re-run.
+# ──────────────────────────────────────────────────────────────────────
+after_install = "akg_ess.install.after_install"
+
+# ──────────────────────────────────────────────────────────────────────
 # Document Events
 # ──────────────────────────────────────────────────────────────────────
 # When a Geofence Violation is approved, auto-create the matching
