@@ -46,6 +46,7 @@ fixtures = [
         "filters": [
             ["name", "in", [
                 "Employee-is_office_worker",
+                "Employee-has_petty_cash",
                 "Project-akg_geofence_section",
                 "Project-site_latitude",
                 "Project-site_longitude",

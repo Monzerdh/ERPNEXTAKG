@@ -72,7 +72,8 @@ def get_session_profile():
         [
             "name", "employee_name", "designation", "department", "image",
             "company", "cell_number", "date_of_joining", "reports_to",
-            "leave_approver", "expense_approver", "is_office_worker",
+            "leave_approver", "expense_approver",
+            "is_office_worker", "has_petty_cash",
         ],
         as_dict=True,
     ) or {}
@@ -129,6 +130,7 @@ def get_session_profile():
         "reports_to": emp.get("reports_to"),
         "reports_to_name": reports_to_name or "",
         "is_office_worker": bool(emp.get("is_office_worker")),
+        "has_petty_cash": bool(emp.get("has_petty_cash")),
         "leave_approver": leave_approver or None,
         "leave_approver_name": leave_approver_name or "",
         "expense_approver": expense_approver or None,

@@ -13,6 +13,18 @@
  },
  {
   "doctype": "Custom Field",
+  "name": "Employee-has_petty_cash",
+  "dt": "Employee",
+  "module": "AKG ESS",
+  "fieldname": "has_petty_cash",
+  "label": "Has Petty Cash",
+  "fieldtype": "Check",
+  "default": "0",
+  "insert_after": "is_office_worker",
+  "description": "When checked, this employee sees the Petty Cash tab in the AKG ESS PWA (for submitting expense claims and top-up requests, plus reviewing their team's claims if they are a manager). Untick for employees who don't handle company cash."
+ },
+ {
+  "doctype": "Custom Field",
   "name": "Project-akg_geofence_section",
   "dt": "Project",
   "module": "AKG ESS",

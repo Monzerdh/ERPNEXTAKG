@@ -29,7 +29,7 @@
 <link rel="preconnect" href="https://c.tile.openstreetmap.org" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="anonymous" />
-<link rel="stylesheet" href="/assets/akg_ess/styles.css?v=40" />
+<link rel="stylesheet" href="/assets/akg_ess/styles.css?v=41" />
 </head>
 <body>
 <div id="root"></div>
@@ -39,15 +39,15 @@
 <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin="anonymous"></script>
 
-<script src="/assets/akg_ess/data.js?v=40"></script>
-<script src="/assets/akg_ess/api.js?v=40"></script>
-<script type="text/babel" src="/assets/akg_ess/ui.jsx?v=40"></script>
-<script type="text/babel" src="/assets/akg_ess/attendance.jsx?v=40"></script>
-<script type="text/babel" src="/assets/akg_ess/monthly-report.jsx?v=40"></script>
-<script type="text/babel" src="/assets/akg_ess/leaves.jsx?v=40"></script>
-<script type="text/babel" src="/assets/akg_ess/petty.jsx?v=40"></script>
-<script type="text/babel" src="/assets/akg_ess/profile.jsx?v=40"></script>
-<script type="text/babel" src="/assets/akg_ess/notifications.jsx?v=40"></script>
+<script src="/assets/akg_ess/data.js?v=41"></script>
+<script src="/assets/akg_ess/api.js?v=41"></script>
+<script type="text/babel" src="/assets/akg_ess/ui.jsx?v=41"></script>
+<script type="text/babel" src="/assets/akg_ess/attendance.jsx?v=41"></script>
+<script type="text/babel" src="/assets/akg_ess/monthly-report.jsx?v=41"></script>
+<script type="text/babel" src="/assets/akg_ess/leaves.jsx?v=41"></script>
+<script type="text/babel" src="/assets/akg_ess/petty.jsx?v=41"></script>
+<script type="text/babel" src="/assets/akg_ess/profile.jsx?v=41"></script>
+<script type="text/babel" src="/assets/akg_ess/notifications.jsx?v=41"></script>
 
 <script type="text/babel">
 // Production runtime defaults (tweaks panel removed). Persisted client-side
@@ -132,14 +132,23 @@ function App() {
   const setLanguage = React.useCallback((lang) => setLanguageState(lang), []);
   const i18n = React.useMemo(() => ({ lang: language, t: window.STRINGS[language] }), [language]);
 
+  // If the user lands on the petty tab but has_petty_cash is off (e.g. HR
+  // toggled it off mid-session), bounce them back to attendance.
+  const hasPettyAccess = !!(window.CURRENT_USER && window.CURRENT_USER.has_petty_cash);
+  React.useEffect(() => {
+    if (tab === 'petty' && !hasPettyAccess) setTab('attendance');
+  }, [tab, hasPettyAccess]);
+
   // Pending counts for nav badges
   const [pending, setPending] = React.useState({ leaves: 0, claims: 0 });
   React.useEffect(() => {
     if (role !== 'manager') { setPending({ leaves: 0, claims: 0 }); return; }
-    Promise.all([window.frappe.getTeamLeaves(), window.frappe.getTeamClaims()])
+    // Don't waste a query on team claims if the manager doesn't see the petty tab.
+    const claimsCall = hasPettyAccess ? window.frappe.getTeamClaims() : Promise.resolve([]);
+    Promise.all([window.frappe.getTeamLeaves(), claimsCall])
       .then(([l, c]) => setPending({ leaves: l.length, claims: c.length }))
       .catch(() => setPending({ leaves: 0, claims: 0 }));
-  }, [role, tab]);
+  }, [role, tab, hasPettyAccess]);
 
   // Geofence mode is now driven by real GPS; the prototype "inside/outside"
   // toggle is gone. Components fall back to live geolocation.
@@ -243,12 +252,17 @@ function AppHeader({ role, isOffline, setIsOffline, offlineCount, setTab, lang, 
 
 function BottomNav({ tab, setTab, pending }) {
   const t = useT();
+  // Petty Cash tab is hidden for employees who don't handle company cash —
+  // controlled by Employee.has_petty_cash on the live site.  Managers who
+  // need to approve their team's petty cash should also be flagged
+  // has_petty_cash=1 (it's the single visibility signal).
+  const showPetty = !!(window.CURRENT_USER && window.CURRENT_USER.has_petty_cash);
   const items = [
     { id: 'attendance', label: t.tab_attendance, icon: 'clock' },
     { id: 'leaves',     label: t.tab_leaves,     icon: 'calendar', badge: pending.leaves },
-    { id: 'petty',      label: t.tab_petty,      icon: 'wallet',   badge: pending.claims },
+    showPetty && { id: 'petty', label: t.tab_petty, icon: 'wallet', badge: pending.claims },
     { id: 'profile',    label: t.tab_profile,    icon: 'user' },
-  ];
+  ].filter(Boolean);
   return (
     <nav className="bottom-nav" style={{ '--nav-cols': items.length }}>
       {items.map((it) => (
