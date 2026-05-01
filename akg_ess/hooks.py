@@ -38,6 +38,7 @@ fixtures = [
         "doctype": "Custom Field",
         "filters": [
             ["name", "in", [
+                "Employee-is_office_worker",
                 "Project-akg_geofence_section",
                 "Project-site_latitude",
                 "Project-site_longitude",

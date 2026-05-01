@@ -118,6 +118,7 @@
       is_manager: !!profile.is_manager,
       reports_to: profile.reports_to || null,
       reports_to_name: profile.reports_to_name || '',
+      is_office_worker: !!profile.is_office_worker,
       cell_number: profile.cell_number || '',
       date_of_joining: profile.date_of_joining || '',
       avatar_initials: initials || 'U',

@@ -1,7 +1,17 @@
-// Attendance — multi-session check-in/out with geofence + check-out popup (Activity / Task)
-// + end-of-day Timesheet preview (gap-split equally across sessions, posted at 11:30 PM).
+// Attendance — routes between two flows based on Employee.is_office_worker:
+//   - Office workers: simple Check In / Check Out, no map, no project,
+//     no activity/task — see OfficeAttendanceScreen below.
+//   - Site workers: the original flow with GPS, geofence matching,
+//     project picker, activity-type modal — see SiteAttendanceScreen.
+function AttendanceScreen(props) {
+  if (window.CURRENT_USER && window.CURRENT_USER.is_office_worker) {
+    return <OfficeAttendanceScreen {...props} />;
+  }
+  return <SiteAttendanceScreen {...props} />;
+}
 
-function AttendanceScreen({ geofenceMode, offlineQueue, setOfflineQueue, isOffline, setIsOffline, onOpenMonthlyReport }) {
+// ─── Site worker flow (original, unchanged behaviour) ──────────────────
+function SiteAttendanceScreen({ geofenceMode, offlineQueue, setOfflineQueue, isOffline, setIsOffline, onOpenMonthlyReport }) {
   const t = useT();
   const toast = useToast();
   const greeting = useGreeting();
@@ -361,6 +371,149 @@ function AttendanceScreen({ geofenceMode, offlineQueue, setOfflineQueue, isOffli
           loading={acting}
         />
       )}
+    </>
+  );
+}
+
+// ─── Office worker flow ───────────────────────────────────────────────
+// Simple Check In / Check Out for staff who don't work on a site.
+// No map, no geofence, no project / activity / task pickers.  Creates
+// Employee Checkin rows with project = null.
+function OfficeAttendanceScreen({ offlineQueue, setOfflineQueue, isOffline, setIsOffline, onOpenMonthlyReport }) {
+  const t = useT();
+  const toast = useToast();
+  const greeting = useGreeting();
+  const [checkins, setCheckins] = React.useState([]);
+  const [loading, setLoading] = React.useState(true);
+  const [acting, setActing] = React.useState(false);
+
+  React.useEffect(() => {
+    window.frappe.getMyCheckins().then((c) => { setCheckins(c); setLoading(false); });
+  }, []);
+
+  const today = new Date().toISOString().slice(0, 10);
+  const todays = checkins
+    .filter((c) => c.time && c.time.startsWith(today))
+    .sort((a, b) => a.time.localeCompare(b.time));
+  const sessions = pairSessions(todays, []);
+  const openSession = sessions.find((s) => !s.out);
+  const isCheckedIn = !!openSession;
+
+  // Sum minutes for today's sessions (closed + the open one running now).
+  const minutesToday = sessions.reduce((sum, s) => {
+    const start = new Date((s.in.time || '').replace(' ', 'T'));
+    const end = s.out ? new Date((s.out.time || '').replace(' ', 'T')) : new Date();
+    return sum + Math.max(0, (end - start) / 60000);
+  }, 0);
+  const hh = Math.floor(minutesToday / 60);
+  const mm = Math.floor(minutesToday % 60);
+
+  const submit = async (logType) => {
+    setActing(true);
+    const payload = {
+      log_type: logType,
+      // No GPS / project / activity / task for office workers.
+      latitude: null, longitude: null, accuracy: null, project: null,
+    };
+    if (isOffline) {
+      setOfflineQueue((q) => [...q, { ...payload, queued_at: new Date().toISOString() }]);
+      toast(`${logType === 'IN' ? t.check_in : t.check_out} — ${t.queued}`, 'warn');
+      setActing(false);
+      return;
+    }
+    try {
+      const row = await window.frappe.createCheckin(payload);
+      setCheckins((c) => [row, ...c]);
+      toast(`${logType === 'IN' ? t.check_in : t.check_out} ✓`, 'ok');
+    } catch (e) {
+      toast(e.message || 'Failed', 'bad');
+    } finally {
+      setActing(false);
+    }
+  };
+
+  const u = window.CURRENT_USER || {};
+
+  return (
+    <>
+      <div style={{ marginBottom: 14 }}>
+        <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 600 }}>{greeting}</div>
+        <div style={{ fontSize: 22, fontWeight: 700, letterSpacing: '-0.02em' }}>{(u.employee_name || '').split(' ')[0]}</div>
+      </div>
+
+      <div className="card" style={{ padding: '18px 16px', marginBottom: 14 }}>
+        <LiveClock />
+        <div style={{ marginTop: 14, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderTop: '1px solid var(--ink-100)' }}>
+          <div>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{t.today}</div>
+            <div style={{ fontSize: 18, fontWeight: 700, fontVariantNumeric: 'tabular-nums', marginTop: 2 }}>
+              {String(hh).padStart(2, '0')}:{String(mm).padStart(2, '0')}
+            </div>
+          </div>
+          <div style={{ textAlign: 'right' }}>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{t.sessions}</div>
+            <div style={{ fontSize: 18, fontWeight: 700, marginTop: 2 }}>{sessions.length}</div>
+          </div>
+          <div style={{ textAlign: 'right' }}>
+            <span className={`chip chip-dot ${isCheckedIn ? 'chip-ok' : ''}`} style={{ fontSize: 11 }}>
+              {isCheckedIn ? t.active_now : t.no_records}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <button
+        className="btn btn-lg"
+        onClick={() => submit(isCheckedIn ? 'OUT' : 'IN')}
+        disabled={acting || loading}
+        style={{
+          width: '100%',
+          marginBottom: 16,
+          background: isCheckedIn ? 'var(--bad)' : 'var(--ok)',
+          color: 'white',
+          fontSize: 17,
+          fontWeight: 700,
+          minHeight: 64,
+          gap: 10,
+        }}
+      >
+        {acting ? <span className="spinner" /> : <Icon name={isCheckedIn ? 'logout' : 'check'} size={20} />}
+        {isCheckedIn ? t.check_out : t.check_in}
+      </button>
+
+      {sessions.length > 0 && (
+        <div className="card card-flush" style={{ marginBottom: 14 }}>
+          <div className="section-label" style={{ padding: '12px 14px 4px' }}>{t.todays_sessions}</div>
+          {sessions.map((s, i) => {
+            const inT = (s.in.time || '').slice(11, 16);
+            const outT = s.out ? (s.out.time || '').slice(11, 16) : null;
+            return (
+              <div key={i} className="list-row">
+                <div className="list-row-icon" style={{ background: outT ? 'var(--ink-100)' : 'var(--ok-100)', color: outT ? 'var(--text-muted)' : 'var(--ok)' }}>
+                  <Icon name="clock" size={16} />
+                </div>
+                <div className="list-row-body">
+                  <div className="list-row-title" style={{ fontSize: 13, fontVariantNumeric: 'tabular-nums' }}>
+                    {inT} <span style={{ color: 'var(--text-muted)' }}>→</span> {outT || <span style={{ color: 'var(--ok)', fontWeight: 600 }}>{t.active_now}</span>}
+                  </div>
+                  <div className="list-row-sub">{outT ? t.reviewed : t.live}</div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      <button
+        className="btn btn-ghost"
+        onClick={onOpenMonthlyReport}
+        style={{ width: '100%', justifyContent: 'space-between' }}
+      >
+        <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Icon name="calendar" size={16} /> {t.monthly_report}
+        </span>
+        <Icon name="chevron" size={14} />
+      </button>
     </>
   );
 }

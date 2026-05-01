@@ -1,6 +1,18 @@
 [
  {
   "doctype": "Custom Field",
+  "name": "Employee-is_office_worker",
+  "dt": "Employee",
+  "module": "AKG ESS",
+  "fieldname": "is_office_worker",
+  "label": "Office Worker (no site)",
+  "fieldtype": "Check",
+  "default": "0",
+  "insert_after": "department",
+  "description": "When checked, this employee uses the simple office attendance flow in the AKG ESS PWA — no project / activity / task / geofence. Useful for HQ admins, finance, and other staff who never work on a site."
+ },
+ {
+  "doctype": "Custom Field",
   "name": "Project-akg_geofence_section",
   "dt": "Project",
   "module": "AKG ESS",
