@@ -321,7 +321,10 @@ function NewLeaveSheet({ open, onClose, balances, onSubmit, isOffline, setOfflin
 
       <div style={{ background: 'var(--surface-2)', padding: '8px 12px', borderRadius: 'var(--radius-sm)', fontSize: 11, color: 'var(--text-muted)', display: 'flex', justifyContent: 'space-between' }}>
         <span>{t.routes_to}</span>
-        <strong style={{ color: 'var(--text)' }}>Omar Sayegh</strong>
+        <strong style={{ color: 'var(--text)' }}>
+          {(window.CURRENT_USER && (window.CURRENT_USER.leave_approver_name || window.CURRENT_USER.leave_approver))
+            || <span style={{ color: 'var(--warn)', fontWeight: 500 }}>Not configured</span>}
+        </strong>
       </div>
     </Sheet>
   );

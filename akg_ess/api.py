@@ -72,9 +72,33 @@ def get_session_profile():
         [
             "name", "employee_name", "designation", "department", "image",
             "company", "cell_number", "date_of_joining", "reports_to",
+            "leave_approver", "expense_approver",
         ],
         as_dict=True,
     ) or {}
+
+    # Leave approver: prefer the direct Employee.leave_approver field; fall
+    # back to the first entry in the Employee Leave Approver child table
+    # (some sites use the table, some use the simple field).
+    leave_approver = emp.get("leave_approver") or ""
+    if emp.get("name") and not leave_approver:
+        rows = frappe.get_all(
+            "Employee Leave Approver",
+            filters={"parent": emp["name"], "parenttype": "Employee"},
+            fields=["leave_approver"],
+            order_by="idx asc",
+            limit_page_length=1,
+        )
+        if rows:
+            leave_approver = rows[0].leave_approver
+    leave_approver_name = (
+        frappe.db.get_value("User", leave_approver, "full_name") if leave_approver else ""
+    )
+
+    expense_approver = emp.get("expense_approver") or ""
+    expense_approver_name = (
+        frappe.db.get_value("User", expense_approver, "full_name") if expense_approver else ""
+    )
 
     roles = set(frappe.get_roles(user))
     manager_roles = {"HR Manager", "Projects Manager", "ESS Manager", "Accounts Manager", "System Manager"}
@@ -97,6 +121,10 @@ def get_session_profile():
         "cell_number": emp.get("cell_number"),
         "date_of_joining": emp.get("date_of_joining"),
         "reports_to": emp.get("reports_to"),
+        "leave_approver": leave_approver or None,
+        "leave_approver_name": leave_approver_name or "",
+        "expense_approver": expense_approver or None,
+        "expense_approver_name": expense_approver_name or "",
         "is_manager": is_manager,
         "roles": sorted(roles),
     }

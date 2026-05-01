@@ -122,6 +122,10 @@
       avatar_initials: initials || 'U',
       image: profile.user_image || '',
       roles: profile.roles || [],
+      leave_approver: profile.leave_approver || null,
+      leave_approver_name: profile.leave_approver_name || '',
+      expense_approver: profile.expense_approver || null,
+      expense_approver_name: profile.expense_approver_name || '',
     };
     window.CURRENT_USER = _currentUserCache;
     return _currentUserCache;
@@ -380,7 +384,7 @@
 
     async submitLeave({ leave_type, from_date, to_date, half_day, half_day_date, description, _localId }) {
       const u = await loadCurrentUser();
-      return insertResource('Leave Application', {
+      const doc = {
         employee: u.employee,
         leave_type, from_date, to_date,
         half_day: half_day ? 1 : 0,
@@ -389,7 +393,15 @@
         description: description || '',
         company: u.company,
         local_id: _localId || localId(),
-      });
+      };
+      // Attach the approver from the Employee record so the request actually
+      // routes to a person in HRMS (otherwise the field is empty and the
+      // approval queue never sees it).
+      if (u.leave_approver) {
+        doc.leave_approver = u.leave_approver;
+        if (u.leave_approver_name) doc.leave_approver_name = u.leave_approver_name;
+      }
+      return insertResource('Leave Application', doc);
     },
 
     async approveLeave(name, comment) {
@@ -480,6 +492,7 @@
         expenses,
         local_id: claim._localId || localId(),
       };
+      if (u.expense_approver) doc.expense_approver = u.expense_approver;
       const created = await insertResource('Expense Claim', doc);
       if (Array.isArray(claim.attachments)) {
         for (const a of claim.attachments) {
