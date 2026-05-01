@@ -377,8 +377,11 @@ function SiteAttendanceScreen({ geofenceMode, offlineQueue, setOfflineQueue, isO
 
 // ─── Office worker flow ───────────────────────────────────────────────
 // Simple Check In / Check Out for staff who don't work on a site.
-// No map, no geofence, no project / activity / task pickers.  Creates
-// Employee Checkin rows with project = null.
+// EXACTLY ONE check-in + ONE check-out per calendar day.  Three states:
+//   not_started → on_clock → done   (no way back; locked till tomorrow)
+// No map, no geofence, no project / activity / task pickers.  Employee
+// Checkin rows are created with project / latitude / longitude /
+// accuracy_m all null.
 function OfficeAttendanceScreen({ offlineQueue, setOfflineQueue, isOffline, setIsOffline, onOpenMonthlyReport }) {
   const t = useT();
   const toast = useToast();
@@ -386,6 +389,7 @@ function OfficeAttendanceScreen({ offlineQueue, setOfflineQueue, isOffline, setI
   const [checkins, setCheckins] = React.useState([]);
   const [loading, setLoading] = React.useState(true);
   const [acting, setActing] = React.useState(false);
+  const [confirmOut, setConfirmOut] = React.useState(false);
 
   React.useEffect(() => {
     window.frappe.getMyCheckins().then((c) => { setCheckins(c); setLoading(false); });
@@ -395,126 +399,406 @@ function OfficeAttendanceScreen({ offlineQueue, setOfflineQueue, isOffline, setI
   const todays = checkins
     .filter((c) => c.time && c.time.startsWith(today))
     .sort((a, b) => a.time.localeCompare(b.time));
-  const sessions = pairSessions(todays, []);
-  const openSession = sessions.find((s) => !s.out);
-  const isCheckedIn = !!openSession;
 
-  // Sum minutes for today's sessions (closed + the open one running now).
-  const minutesToday = sessions.reduce((sum, s) => {
-    const start = new Date((s.in.time || '').replace(' ', 'T'));
-    const end = s.out ? new Date((s.out.time || '').replace(' ', 'T')) : new Date();
-    return sum + Math.max(0, (end - start) / 60000);
-  }, 0);
-  const hh = Math.floor(minutesToday / 60);
-  const mm = Math.floor(minutesToday % 60);
+  // Office workers get exactly one IN + one OUT per day. Anything beyond is ignored.
+  const todayIn  = todays.find((c) => c.log_type === 'IN')  || null;
+  const todayOut = todays.find((c) => c.log_type === 'OUT') || null;
+  const dayState = todayOut ? 'done' : (todayIn ? 'on_clock' : 'not_started');
+
+  // Live total minutes — auto-ticks every 30s while on the clock so the
+  // hero "Today" stat stays current without remounting.
+  const [, setTick] = React.useState(0);
+  React.useEffect(() => {
+    if (dayState !== 'on_clock') return;
+    const id = setInterval(() => setTick((x) => x + 1), 30000);
+    return () => clearInterval(id);
+  }, [dayState]);
+
+  let totalMin = 0;
+  if (todayIn && todayOut) {
+    totalMin = Math.max(0, Math.round(
+      (+new Date(todayOut.time.replace(' ', 'T')) - +new Date(todayIn.time.replace(' ', 'T'))) / 60000
+    ));
+  } else if (todayIn) {
+    totalMin = Math.max(0, Math.round(
+      (Date.now() - +new Date(todayIn.time.replace(' ', 'T'))) / 60000
+    ));
+  }
 
   const submit = async (logType) => {
     setActing(true);
     const payload = {
       log_type: logType,
-      // No GPS / project / activity / task for office workers.
-      latitude: null, longitude: null, accuracy: null, project: null,
+      latitude: null, longitude: null, project: null, accuracy: null,
     };
     if (isOffline) {
       setOfflineQueue((q) => [...q, { ...payload, queued_at: new Date().toISOString() }]);
-      toast(`${logType === 'IN' ? t.check_in : t.check_out} — ${t.queued}`, 'warn');
+      toast(`${logType === 'OUT' ? t.check_out : t.check_in} — ${t.queued}`, 'warn');
       setActing(false);
+      setConfirmOut(false);
       return;
     }
     try {
       const row = await window.frappe.createCheckin(payload);
       setCheckins((c) => [row, ...c]);
-      toast(`${logType === 'IN' ? t.check_in : t.check_out} ✓`, 'ok');
+      toast(`${logType === 'OUT' ? t.check_out : t.check_in} ✓`, 'ok');
     } catch (e) {
       toast(e.message || 'Failed', 'bad');
     } finally {
       setActing(false);
+      setConfirmOut(false);
     }
   };
 
+  const onPrimary = () => {
+    if (dayState === 'on_clock') setConfirmOut(true);
+    else if (dayState === 'not_started') submit('IN');
+  };
+
+  if (loading) return (
+    <div style={{ padding: 16 }}>
+      <Skeleton h={84} mb={12} />
+      <Skeleton h={220} mb={12} />
+      <Skeleton h={140} />
+    </div>
+  );
+
   const u = window.CURRENT_USER || {};
+  const hours = Math.floor(totalMin / 60);
+  const mins = totalMin % 60;
 
   return (
     <>
-      <div style={{ marginBottom: 14 }}>
-        <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 600 }}>{greeting}</div>
-        <div style={{ fontSize: 22, fontWeight: 700, letterSpacing: '-0.02em' }}>{(u.employee_name || '').split(' ')[0]}</div>
-      </div>
-
-      <div className="card" style={{ padding: '18px 16px', marginBottom: 14 }}>
-        <LiveClock />
-        <div style={{ marginTop: 14, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderTop: '1px solid var(--ink-100)' }}>
-          <div>
-            <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{t.today}</div>
-            <div style={{ fontSize: 18, fontWeight: 700, fontVariantNumeric: 'tabular-nums', marginTop: 2 }}>
-              {String(hh).padStart(2, '0')}:{String(mm).padStart(2, '0')}
-            </div>
-          </div>
-          <div style={{ textAlign: 'right' }}>
-            <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{t.sessions}</div>
-            <div style={{ fontSize: 18, fontWeight: 700, marginTop: 2 }}>{sessions.length}</div>
-          </div>
-          <div style={{ textAlign: 'right' }}>
-            <span className={`chip chip-dot ${isCheckedIn ? 'chip-ok' : ''}`} style={{ fontSize: 11 }}>
-              {isCheckedIn ? t.active_now : t.no_records}
-            </span>
+      {/* Greeting */}
+      <div style={{ marginBottom: 14, display: 'flex', alignItems: 'flex-end', gap: 12 }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>{greeting},</div>
+          <div style={{ fontSize: 22, fontWeight: 700, letterSpacing: '-0.02em' }}>
+            {(u.employee_name || '').split(' ')[0]}
           </div>
         </div>
+        <span className="chip chip-info" title="Office Worker">
+          <Icon name="shield" size={12} /> Office
+        </span>
       </div>
 
-      <button
-        className="btn btn-lg"
-        onClick={() => submit(isCheckedIn ? 'OUT' : 'IN')}
-        disabled={acting || loading}
-        style={{
-          width: '100%',
-          marginBottom: 16,
-          background: isCheckedIn ? 'var(--bad)' : 'var(--ok)',
-          color: 'white',
-          fontSize: 17,
-          fontWeight: 700,
-          minHeight: 64,
-          gap: 10,
-        }}
-      >
-        {acting ? <span className="spinner" /> : <Icon name={isCheckedIn ? 'logout' : 'check'} size={20} />}
-        {isCheckedIn ? t.check_out : t.check_in}
-      </button>
-
-      {sessions.length > 0 && (
-        <div className="card card-flush" style={{ marginBottom: 14 }}>
-          <div className="section-label" style={{ padding: '12px 14px 4px' }}>{t.todays_sessions}</div>
-          {sessions.map((s, i) => {
-            const inT = (s.in.time || '').slice(11, 16);
-            const outT = s.out ? (s.out.time || '').slice(11, 16) : null;
-            return (
-              <div key={i} className="list-row">
-                <div className="list-row-icon" style={{ background: outT ? 'var(--ink-100)' : 'var(--ok-100)', color: outT ? 'var(--text-muted)' : 'var(--ok)' }}>
-                  <Icon name="clock" size={16} />
-                </div>
-                <div className="list-row-body">
-                  <div className="list-row-title" style={{ fontSize: 13, fontVariantNumeric: 'tabular-nums' }}>
-                    {inT} <span style={{ color: 'var(--text-muted)' }}>→</span> {outT || <span style={{ color: 'var(--ok)', fontWeight: 600 }}>{t.active_now}</span>}
-                  </div>
-                  <div className="list-row-sub">{outT ? t.reviewed : t.live}</div>
-                </div>
-              </div>
-            );
-          })}
+      {/* Offline banner */}
+      {isOffline && (
+        <div className="card" style={{ background: 'var(--warn-100)', borderColor: 'var(--warn)', display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+          <Icon name="wifiOff" size={20} style={{ color: 'var(--warn)' }} />
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--warn)' }}>{t.offline_mode}</div>
+            <div style={{ fontSize: 12, color: 'var(--warn)' }}>{offlineQueue.length} {t.queued}</div>
+          </div>
         </div>
       )}
 
+      {/* Hero clock card */}
+      <div className={`office-hero ${dayState === 'on_clock' ? 'is-active' : ''} ${dayState === 'done' ? 'is-done' : ''}`}>
+        <div className="office-hero-status">
+          <span className="office-hero-status-dot" />
+          {dayState === 'on_clock' && `On the clock · since ${fmtTime(todayIn.time)}`}
+          {dayState === 'done'     && `Day complete · ${fmtTime(todayIn.time)} → ${fmtTime(todayOut.time)}`}
+          {dayState === 'not_started' && 'Not started'}
+        </div>
+        <OfficeLiveClock />
+        <div className="office-hero-stats">
+          <div className="office-hero-stat">
+            <div className="office-hero-stat-label">Today</div>
+            <div className="office-hero-stat-value tabular">
+              {String(hours).padStart(2, '0')}<span className="sep">:</span>{String(mins).padStart(2, '0')}
+            </div>
+            <div className="office-hero-stat-sub">
+              {dayState === 'not_started' ? '—' : 'hours · mins'}
+            </div>
+          </div>
+          <div className="office-hero-divider" />
+          <div className="office-hero-stat">
+            <div className="office-hero-stat-label">
+              {dayState === 'done' ? 'Checked out' : 'Status'}
+            </div>
+            <div className="office-hero-stat-value tabular" style={{ fontSize: dayState === 'done' ? 26 : 22 }}>
+              {dayState === 'done' && fmtTime(todayOut.time)}
+              {dayState === 'on_clock' && <span style={{ color: '#4ADE80' }}>Live</span>}
+              {dayState === 'not_started' && <span style={{ color: 'rgba(255,255,255,.55)' }}>—</span>}
+            </div>
+            <div className="office-hero-stat-sub">
+              {dayState === 'on_clock' && <><span className="live-dot" /> Active now</>}
+              {dayState === 'done'     && 'Locked for today'}
+              {dayState === 'not_started' && 'Tap below to start'}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Primary action — three mutually exclusive renders */}
+      <div style={{ marginTop: 14 }}>
+        {dayState === 'done' ? (
+          <div className="office-done-card">
+            <div className="office-done-icon">
+              <Icon name="check" size={22} />
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div className="office-done-title">You're done for today</div>
+              <div className="office-done-sub">
+                {(totalMin / 60).toFixed(2)}h logged · check-in opens again tomorrow
+              </div>
+            </div>
+            <Icon name="shield" size={18} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+          </div>
+        ) : (
+          <button
+            className={`checkin-button ${dayState === 'on_clock' ? 'out' : 'in'}`}
+            onClick={onPrimary}
+            disabled={acting}
+          >
+            {acting ? <span className="spinner" /> : <Icon name={dayState === 'on_clock' ? 'logout' : 'check'} size={26} />}
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 2 }}>
+              <span className="lt">
+                {dayState === 'on_clock'
+                  ? `${t.checked_in_at} ${fmtTime(todayIn.time)}`
+                  : 'Tap to start your day'}
+              </span>
+              <span>{dayState === 'on_clock' ? t.check_out : t.check_in}</span>
+            </div>
+          </button>
+        )}
+      </div>
+
+      {/* Today's record — single session view */}
+      {todayIn && (
+        <div style={{ marginTop: 18 }}>
+          <div className="section-label">Today</div>
+          <div className="card card-flush">
+            <div className="list-row">
+              <div className="list-row-icon" style={{ background: 'var(--ok-100)', color: 'var(--ok)' }}>
+                <Icon name="check" size={16} />
+              </div>
+              <div className="list-row-body">
+                <div className="list-row-title">{t.check_in}</div>
+                <div className="list-row-sub">{fmtTime(todayIn.time)}</div>
+              </div>
+              <div className="list-row-meta">
+                <span className="chip chip-ok">Logged</span>
+              </div>
+            </div>
+            <div className="list-row">
+              <div className="list-row-icon" style={{
+                background: todayOut ? 'var(--ink-100)' : 'var(--surface-2)',
+                color: todayOut ? 'var(--text-muted)' : 'var(--ink-400)',
+              }}>
+                <Icon name="logout" size={16} />
+              </div>
+              <div className="list-row-body">
+                <div className="list-row-title">
+                  {t.check_out}
+                  {!todayOut && <span style={{ color: 'var(--text-muted)', fontWeight: 500 }}> · pending</span>}
+                </div>
+                <div className="list-row-sub">
+                  {todayOut ? fmtTime(todayOut.time) : <><span className="live-dot" /> Working now…</>}
+                </div>
+              </div>
+              <div className="list-row-meta">
+                {todayOut
+                  ? <span className="list-row-amount tabular">{(totalMin / 60).toFixed(2)}h</span>
+                  : <span className="chip chip-warn chip-dot">Open</span>}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Monthly report entry */}
       <button
-        className="btn btn-ghost"
+        className="card monthly-cta"
         onClick={onOpenMonthlyReport}
-        style={{ width: '100%', justifyContent: 'space-between' }}
+        style={{ marginTop: 14, display: 'flex', alignItems: 'center', gap: 12, width: '100%', textAlign: 'inherit', cursor: 'pointer', font: 'inherit', color: 'inherit' }}
       >
-        <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <Icon name="calendar" size={16} /> {t.monthly_report}
-        </span>
-        <Icon name="chevron" size={14} />
+        <div style={{ width: 38, height: 38, borderRadius: 10, background: 'var(--navy-100)', color: 'var(--navy-700)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+          <Icon name="calendar" size={20} />
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 14, fontWeight: 700 }}>{t.monthly_report_title || 'Monthly attendance'}</div>
+          <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{t.monthly_report_sub || 'View your month at a glance'}</div>
+        </div>
+        <Icon name="chevron" size={18} style={{ color: 'var(--text-muted)' }} />
       </button>
+
+      {/* Last 5 days hours bar */}
+      <OfficeWeekly checkins={checkins} />
+
+      {/* Confirm check-out modal — never submits OUT immediately */}
+      {confirmOut && (
+        <CheckOutConfirmModal
+          checkInTime={todayIn ? fmtTime(todayIn.time) : ''}
+          totalMin={totalMin}
+          loading={acting}
+          onCancel={() => !acting && setConfirmOut(false)}
+          onConfirm={() => submit('OUT')}
+        />
+      )}
     </>
+  );
+}
+
+// ─── Confirm check-out — single-shot warning for office workers ─────────
+function CheckOutConfirmModal({ checkInTime, totalMin, loading, onCancel, onConfirm }) {
+  const t = useT();
+  React.useEffect(() => {
+    const onKey = (e) => { if (e.key === 'Escape' && !loading) onCancel(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onCancel, loading]);
+  const hours = Math.floor(totalMin / 60);
+  const mins  = totalMin % 60;
+  const now = new Date();
+  const nowStr = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+
+  return ReactDOM.createPortal(
+    <div className="modal-backdrop" onClick={loading ? undefined : onCancel}>
+      <div className="modal-sheet" onClick={(e) => e.stopPropagation()}>
+        <div style={{ padding: '22px 20px 18px' }}>
+          {/* Header */}
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 4 }}>
+            <div style={{
+              width: 44, height: 44, borderRadius: 12,
+              background: 'var(--warn-100)', color: 'var(--warn)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+            }}>
+              <Icon name="alert" size={24} />
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 17, fontWeight: 700, letterSpacing: '-0.01em' }}>
+                Check out for the day?
+              </div>
+              <div style={{ fontSize: 12.5, color: 'var(--text-muted)', marginTop: 4, lineHeight: 1.5 }}>
+                Office workers can only check out <b style={{ color: 'var(--text)' }}>once per day</b>. You won't be able to check back in until tomorrow.
+              </div>
+            </div>
+          </div>
+
+          {/* Today's summary block */}
+          <div className="checkout-summary">
+            <div className="checkout-summary-row">
+              <div className="checkout-summary-label">Checked in</div>
+              <div className="checkout-summary-value tabular">{checkInTime || '—'}</div>
+            </div>
+            <div className="checkout-summary-row">
+              <div className="checkout-summary-label">Checking out</div>
+              <div className="checkout-summary-value tabular" style={{ color: 'var(--warn)' }}>{nowStr}</div>
+            </div>
+            <div className="checkout-summary-divider" />
+            <div className="checkout-summary-row">
+              <div className="checkout-summary-label" style={{ fontWeight: 600, color: 'var(--text)' }}>Total today</div>
+              <div className="checkout-summary-value tabular" style={{ fontSize: 22, fontWeight: 800 }}>
+                {String(hours).padStart(2,'0')}:{String(mins).padStart(2,'0')}
+              </div>
+            </div>
+          </div>
+
+          {/* Actions */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.4fr', gap: 10, marginTop: 18 }}>
+            <button className="btn btn-ghost" onClick={onCancel} disabled={loading}>
+              {t.cancel || 'Cancel'}
+            </button>
+            <button className="btn btn-danger" onClick={onConfirm} disabled={loading}>
+              {loading ? <span className="spinner" /> : <Icon name="logout" size={16} />}
+              Yes, check out
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
+// ─── Big live clock for the hero ──────────────────────────────────────
+function OfficeLiveClock() {
+  const [now, setNow] = React.useState(new Date());
+  React.useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(id);
+  }, []);
+  const ctx = useLang ? useLang() : { lang: 'en' };
+  const lang = (ctx && ctx.lang) || 'en';
+  const locale = lang === 'ar' ? 'ar-AE' : 'en-GB';
+  const hh = String(now.getHours()).padStart(2, '0');
+  const mm = String(now.getMinutes()).padStart(2, '0');
+  const ss = String(now.getSeconds()).padStart(2, '0');
+  const date = now.toLocaleDateString(locale, { weekday: 'long', day: 'numeric', month: 'long' });
+  return (
+    <div className="office-clock">
+      <div className="office-clock-time tabular">
+        <span>{hh}</span>
+        <span className="office-clock-sep">:</span>
+        <span>{mm}</span>
+        <span className="office-clock-sec tabular">{ss}</span>
+      </div>
+      <div className="office-clock-date">{date}</div>
+    </div>
+  );
+}
+
+// Pair raw events into office sessions — first IN + first OUT only
+function pairOfficeSessions(events) {
+  const inEv = events.find((e) => e.log_type === 'IN');
+  const outEv = events.find((e) => e.log_type === 'OUT' && (!inEv || e.time > inEv.time));
+  if (!inEv) return [];
+  const session = { in: inEv, out: outEv || null };
+  if (outEv) {
+    session.duration_min = Math.max(0, Math.round(
+      (+new Date(outEv.time.replace(' ', 'T')) - +new Date(inEv.time.replace(' ', 'T'))) / 60000
+    ));
+  }
+  return [session];
+}
+
+// 5-day mini hours strip
+function OfficeWeekly({ checkins }) {
+  const days = [];
+  for (let i = 4; i >= 0; i--) {
+    const d = new Date(); d.setDate(d.getDate() - i);
+    const key = d.toISOString().slice(0, 10);
+    const dayEvents = checkins.filter((c) => c.time && c.time.startsWith(key)).sort((a, b) => a.time.localeCompare(b.time));
+    const sessions = pairOfficeSessions(dayEvents);
+    const hrs = sessions.reduce((acc, s) => {
+      if (s.out) return acc + (s.duration_min || 0) / 60;
+      if (s.in && key === new Date().toISOString().slice(0, 10)) {
+        return acc + Math.max(0, (Date.now() - +new Date(s.in.time.replace(' ', 'T'))) / 3600000);
+      }
+      return acc;
+    }, 0);
+    days.push({ d, key, hrs: Math.round(hrs * 10) / 10, isToday: i === 0 });
+  }
+  const max = Math.max(8, ...days.map((x) => x.hrs));
+  const total = days.reduce((a, b) => a + b.hrs, 0);
+
+  return (
+    <div className="card" style={{ marginTop: 14 }}>
+      <div className="row-between" style={{ marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div>
+          <div className="card-title">Last 5 days</div>
+          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>Total {total.toFixed(1)}h · target 40h/wk</div>
+        </div>
+        <span className="chip chip-info">{(total / 5).toFixed(1)}h avg</span>
+      </div>
+      <div className="office-week">
+        {days.map((x) => (
+          <div key={x.key} className={`office-week-col ${x.isToday ? 'is-today' : ''}`}>
+            <div className="office-week-bar-track">
+              <div className="office-week-bar"
+                   style={{ height: `${(x.hrs / max) * 100}%` }}
+                   title={`${x.hrs}h`}>
+                {x.hrs > 0 && <span className="office-week-bar-num tabular">{x.hrs.toFixed(1)}</span>}
+              </div>
+            </div>
+            <div className="office-week-day">{x.d.toLocaleDateString([], { weekday: 'short' }).slice(0, 3)}</div>
+            <div className="office-week-date tabular">{x.d.getDate()}</div>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 

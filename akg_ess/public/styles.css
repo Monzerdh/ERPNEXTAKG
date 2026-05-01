@@ -959,3 +959,240 @@ input, textarea, select { font-family: inherit; font-size: inherit; }
   display: grid; place-items: center;
 }
 .pwa-banner-close:hover { background: var(--surface-2); color: var(--text); }
+
+/* ─── Office Worker hero ─────────────────────────────────────────────── */
+.office-hero {
+  position: relative;
+  border-radius: var(--radius-lg);
+  padding: 22px 20px 18px;
+  background:
+    radial-gradient(120% 80% at 100% 0%, rgba(242,192,18,.08) 0%, transparent 55%),
+    linear-gradient(180deg, var(--navy-900) 0%, var(--navy-950) 100%);
+  color: white;
+  overflow: hidden;
+  box-shadow: 0 10px 26px rgba(15,23,42,.18);
+}
+.office-hero::before {
+  content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 3px;
+  background: repeating-linear-gradient(90deg, var(--hivis) 0 14px, var(--ink-900) 14px 22px);
+  opacity: .55;
+}
+.office-hero.is-active::before { opacity: 1; }
+.office-hero-status {
+  display: inline-flex; align-items: center; gap: 7px;
+  font-size: 10.5px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.1em;
+  color: rgba(255,255,255,.7);
+  padding: 5px 10px 5px 8px;
+  border-radius: 999px;
+  background: rgba(255,255,255,.06);
+  border: 1px solid rgba(255,255,255,.08);
+}
+.office-hero.is-active .office-hero-status {
+  color: #BBF7D0;
+  background: rgba(34,197,94,.12);
+  border-color: rgba(34,197,94,.35);
+}
+.office-hero-status-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--ink-400);
+}
+.office-hero.is-active .office-hero-status-dot {
+  background: #4ADE80;
+  box-shadow: 0 0 0 0 rgba(74,222,128,.6);
+  animation: officePulse 1.6s infinite;
+}
+@keyframes officePulse {
+  0%   { box-shadow: 0 0 0 0 rgba(74,222,128,.55); }
+  70%  { box-shadow: 0 0 0 8px rgba(74,222,128,0); }
+  100% { box-shadow: 0 0 0 0 rgba(74,222,128,0); }
+}
+[dir="rtl"] .office-hero-status { text-transform: none; letter-spacing: 0; }
+
+.office-clock {
+  margin-top: 14px;
+  margin-bottom: 18px;
+}
+.office-clock-time {
+  font-size: 64px; font-weight: 800;
+  letter-spacing: -0.04em;
+  line-height: 1;
+  display: flex; align-items: baseline; gap: 0;
+  font-variant-numeric: tabular-nums;
+}
+.office-clock-sep {
+  display: inline-block;
+  margin: 0 4px;
+  color: var(--hivis);
+  animation: blinkSep 1s steps(2, start) infinite;
+}
+@keyframes blinkSep { 0%,49% { opacity: 1 } 50%,100% { opacity: .35 } }
+.office-clock-sec {
+  font-size: 22px; font-weight: 600;
+  letter-spacing: 0;
+  color: rgba(255,255,255,.55);
+  margin-inline-start: 10px;
+  align-self: flex-start;
+  margin-top: 8px;
+}
+.office-clock-date {
+  font-size: 13px; color: rgba(255,255,255,.65);
+  margin-top: 8px;
+  font-weight: 500;
+}
+
+.office-hero-stats {
+  display: flex; align-items: stretch;
+  gap: 14px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(255,255,255,.08);
+}
+.office-hero-stat { flex: 1; min-width: 0; }
+.office-hero-stat-label {
+  font-size: 10px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.1em;
+  color: rgba(255,255,255,.55);
+}
+[dir="rtl"] .office-hero-stat-label { text-transform: none; letter-spacing: 0; }
+.office-hero-stat-value {
+  font-size: 26px; font-weight: 700;
+  letter-spacing: -0.02em;
+  margin-top: 4px;
+  color: white;
+  font-variant-numeric: tabular-nums;
+}
+.office-hero-stat-value .sep { color: var(--hivis); margin: 0 1px; }
+.office-hero-stat-sub {
+  font-size: 11px; color: rgba(255,255,255,.6);
+  margin-top: 2px;
+  display: inline-flex; align-items: center; gap: 5px;
+}
+.office-hero-divider {
+  width: 1px; background: rgba(255,255,255,.08);
+}
+
+.live-dot, .live-dot-lg {
+  display: inline-block;
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: #4ADE80;
+  box-shadow: 0 0 0 0 rgba(74,222,128,.6);
+  animation: officePulse 1.6s infinite;
+}
+.live-dot-lg { width: 10px; height: 10px; }
+
+/* ─── Office weekly mini-chart ──────────────────────────────────────── */
+.office-week {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 8px;
+  align-items: end;
+}
+.office-week-col {
+  display: flex; flex-direction: column; align-items: center;
+  gap: 6px;
+}
+.office-week-bar-track {
+  width: 100%; height: 90px;
+  background: var(--ink-100);
+  border-radius: 8px;
+  display: flex; align-items: flex-end;
+  padding: 4px;
+  position: relative;
+}
+.office-week-col.is-today .office-week-bar-track {
+  background: var(--navy-50);
+  outline: 2px solid var(--navy-700);
+  outline-offset: -2px;
+}
+.office-week-bar {
+  width: 100%;
+  min-height: 4px;
+  background: var(--navy-700);
+  border-radius: 5px;
+  position: relative;
+  transition: height .3s;
+}
+.office-week-col.is-today .office-week-bar {
+  background: var(--hivis);
+}
+.office-week-bar-num {
+  position: absolute;
+  top: -16px; left: 50%; transform: translateX(-50%);
+  font-size: 10px; font-weight: 700;
+  color: var(--text);
+  white-space: nowrap;
+}
+.office-week-day {
+  font-size: 10px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+.office-week-col.is-today .office-week-day { color: var(--navy-800); }
+.office-week-date {
+  font-size: 11px; font-weight: 700;
+  color: var(--text);
+}
+
+[data-variant="soft"] .office-hero {
+  background:
+    radial-gradient(120% 80% at 100% 0%, rgba(232,180,0,.18) 0%, transparent 55%),
+    linear-gradient(180deg, #1A2C46 0%, #0F1E33 100%);
+}
+[data-variant="soft"] .office-week-bar-track { background: var(--surface-2); }
+
+/* ─── Office "Day complete" card ────────────────────────────────────── */
+.office-done-card {
+  display: flex; align-items: center; gap: 14px;
+  padding: 16px 18px;
+  border-radius: var(--radius-lg);
+  background: linear-gradient(180deg, var(--ok-100) 0%, #F0FDF4 100%);
+  border: 1px solid color-mix(in oklab, var(--ok) 25%, transparent);
+  position: relative;
+  overflow: hidden;
+}
+.office-done-card::before {
+  content: ""; position: absolute; left: 0; top: 0; bottom: 0;
+  width: 4px; background: var(--ok);
+}
+.office-done-icon {
+  width: 44px; height: 44px; border-radius: 12px;
+  background: var(--ok); color: white;
+  display: grid; place-items: center;
+  flex-shrink: 0;
+  box-shadow: 0 4px 12px rgba(21,128,61,.25);
+}
+.office-done-title { font-size: 15px; font-weight: 700; color: var(--ok); letter-spacing: -0.01em; }
+.office-done-sub { font-size: 12px; color: color-mix(in oklab, var(--ok) 70%, var(--text)); margin-top: 2px; }
+
+/* office-hero done state — calmer styling, no pulse */
+.office-hero.is-done::before {
+  background: repeating-linear-gradient(90deg, var(--ok) 0 14px, var(--ink-900) 14px 22px);
+  opacity: .8;
+}
+.office-hero.is-done .office-hero-status {
+  color: #BBF7D0;
+  background: rgba(34,197,94,.12);
+  border-color: rgba(34,197,94,.35);
+}
+.office-hero.is-done .office-hero-status-dot { background: #4ADE80; }
+.office-hero.is-done .office-clock-sep { animation: none; opacity: .5; }
+
+/* ─── Check-out confirm modal summary ───────────────────────────────── */
+.checkout-summary {
+  margin-top: 16px;
+  padding: 14px 16px;
+  background: var(--ink-50);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.checkout-summary-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 6px 0;
+}
+.checkout-summary-label { font-size: 13px; color: var(--text-muted); }
+.checkout-summary-value { font-size: 14px; font-weight: 600; color: var(--text); }
+.checkout-summary-divider {
+  height: 1px; background: var(--border);
+  margin: 6px 0;
+}

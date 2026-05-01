@@ -27,6 +27,13 @@ doc_events = {
     "Geofence Violation": {
         "on_update": "akg_ess.akg_ess.doctype.geofence_violation.geofence_violation.on_status_change",
     },
+    # Office workers (Employee.is_office_worker = 1) are limited to exactly
+    # one IN and one OUT per calendar day.  This hook rejects duplicates
+    # before insert, so retries / the offline outbox can never accidentally
+    # create a second clock-in.
+    "Employee Checkin": {
+        "before_insert": "akg_ess.checkin_guards.enforce_office_worker_single_daily",
+    },
 }
 
 # ──────────────────────────────────────────────────────────────────────
