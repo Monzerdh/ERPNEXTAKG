@@ -100,6 +100,12 @@ def get_session_profile():
         frappe.db.get_value("User", expense_approver, "full_name") if expense_approver else ""
     )
 
+    # Manager / reports-to: resolve the linked Employee's display name
+    # so the profile screen can show "Reports to: <name>" instead of the raw ID.
+    reports_to_name = ""
+    if emp.get("reports_to"):
+        reports_to_name = frappe.db.get_value("Employee", emp["reports_to"], "employee_name") or ""
+
     roles = set(frappe.get_roles(user))
     manager_roles = {"HR Manager", "Projects Manager", "ESS Manager", "Accounts Manager", "System Manager"}
     is_manager = bool(roles & manager_roles)
@@ -121,6 +127,7 @@ def get_session_profile():
         "cell_number": emp.get("cell_number"),
         "date_of_joining": emp.get("date_of_joining"),
         "reports_to": emp.get("reports_to"),
+        "reports_to_name": reports_to_name or "",
         "leave_approver": leave_approver or None,
         "leave_approver_name": leave_approver_name or "",
         "expense_approver": expense_approver or None,

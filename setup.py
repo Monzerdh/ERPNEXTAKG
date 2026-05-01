@@ -19,7 +19,7 @@ def _parse_requirements(path):
 
 setup(
     name="akg_ess",
-    version="0.1.7",
+    version="0.1.8",
     description="Employee Self-Service PWA for AKG Contracting (attendance, leaves, petty cash).",
     author="AKG Contracting",
     author_email="it@akg.ae",

@@ -23,6 +23,17 @@ function ProfileScreen({ role, setRole, onLogout, outboxCount = 0, onOpenOutbox 
         <div className="list-row"><div className="list-row-icon"><Icon name="bell" size={16} /></div><div className="list-row-body"><div className="list-row-sub">{t.mobile}</div><div className="list-row-title" style={{ fontSize: 13 }}>{u.cell_number}</div></div></div>
         <div className="list-row"><div className="list-row-icon"><Icon name="shield" size={16} /></div><div className="list-row-body"><div className="list-row-sub">{t.joined}</div><div className="list-row-title" style={{ fontSize: 13 }}>{fmtDate(u.date_of_joining)}</div></div></div>
         <div className="list-row"><div className="list-row-icon"><Icon name="file" size={16} /></div><div className="list-row-body"><div className="list-row-sub">{t.company}</div><div className="list-row-title" style={{ fontSize: 13 }}>{u.company}</div></div></div>
+        <div className="list-row">
+          <div className="list-row-icon"><Icon name="user" size={16} /></div>
+          <div className="list-row-body">
+            <div className="list-row-sub">{t.reports_to_label}</div>
+            <div className="list-row-title" style={{ fontSize: 13 }}>
+              {u.reports_to_name
+                || (u.reports_to ? <span className="mono" style={{ fontSize: 12 }}>{u.reports_to}</span> : null)
+                || <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>{t.not_assigned}</span>}
+            </div>
+          </div>
+        </div>
       </div>
 
       {role === 'manager' && <ManagerTeamCard />}
