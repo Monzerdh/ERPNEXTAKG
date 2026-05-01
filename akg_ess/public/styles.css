@@ -95,6 +95,36 @@ html, body {
   line-height: 1.45;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+  /* Native-app feel: prevent iOS auto-resizing of body text in landscape, */
+  /* prevent rubber-band overscroll, and prevent the OS pull-to-refresh gesture. */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  overscroll-behavior-y: none;
+}
+
+/* Disable double-tap-to-zoom and 300ms tap delay on every interactive
+   surface. Pinch-zoom is already disabled via the viewport meta tag —
+   touch-action: manipulation kills the double-tap zoom + click delay
+   that makes the app feel "browsery" on iOS. */
+button, a, label, .seg-btn, .icon-btn, .bottom-nav-item,
+.btn, .field-input, .field-select, .field-textarea, .select,
+[role="button"], [role="tab"] {
+  touch-action: manipulation;
+}
+
+/* When installed to home screen, suppress text long-press selection on
+   buttons / nav / labels — feels jarring vs. native apps. Inputs and
+   prose still allow selection (overridden below). */
+@media (display-mode: standalone) {
+  body {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+  }
+  input, textarea, [contenteditable], .selectable {
+    -webkit-user-select: text;
+    user-select: text;
+  }
 }
 
 [dir="rtl"] body, [dir="rtl"] {
@@ -274,7 +304,11 @@ input, textarea, select { font-family: inherit; font-size: inherit; }
   border-radius: var(--radius);
   background: var(--surface);
   color: var(--text);
-  font-size: 15px;
+  /* 16px is the iOS threshold below which Safari auto-zooms into the
+     input on focus.  Auto-zoom on a PWA breaks the bottom-fixed nav
+     and there's no way to zoom back out with user-scalable=no, so the
+     nav appears stuck "lifted up".  Always 16px+ here. */
+  font-size: 16px;
   outline: none;
   transition: border-color .15s, box-shadow .15s;
   min-height: 48px;
@@ -651,7 +685,7 @@ input, textarea, select { font-family: inherit; font-size: inherit; }
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 11px 36px 11px 12px;
-  font: inherit; font-size: 13px; font-weight: 500;
+  font: inherit; font-size: 16px; font-weight: 500;
   color: var(--text);
   background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2364748B' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>");
   background-repeat: no-repeat;
