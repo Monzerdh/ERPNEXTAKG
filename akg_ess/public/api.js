@@ -212,18 +212,17 @@
     },
 
     async getActivityTypes() {
-      return listResource('Activity Type', { fields: ['name', 'billable', 'default_costing_rate'], limit: 0 }).catch(() => []);
+      // Standard ERPNext Activity Type only grants read perm to "Projects User".
+      // Route through the whitelisted server method so PWA users without that
+      // role still see the list.
+      const r = await callMethod('akg_ess.api.get_activity_types').catch(() => []);
+      return Array.isArray(r) ? r : [];
     },
 
     async getProjectTasks(project) {
-      const filters = [];
-      if (project) filters.push(['project', '=', project]);
-      return listResource('Task', {
-        filters,
-        fields: ['name', 'subject', 'project', 'status', 'progress'],
-        orderBy: 'modified desc',
-        limit: 100,
-      }).catch(() => []);
+      // Same rationale as getActivityTypes — Task requires Projects User.
+      const r = await callMethod('akg_ess.api.get_project_tasks', { project: project || null }).catch(() => []);
+      return Array.isArray(r) ? r : [];
     },
 
     // ─── Geofence violations ─────────────────────────────────────────

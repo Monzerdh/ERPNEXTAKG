@@ -102,6 +102,55 @@ def get_session_profile():
     }
 
 
+@frappe.whitelist()
+def get_activity_types():
+    """Return all enabled Activity Types regardless of caller's role.
+
+    Why this exists: the standard ERPNext Activity Type DocType only
+    grants read permission to the "Projects User" role.  PWA users who
+    have only "Employee" / "ESS User" roles would otherwise see an
+    empty dropdown even though records exist.  This endpoint reads
+    with ignore_permissions=True after confirming the caller is signed
+    in (not Guest).
+    """
+    if not frappe.session.user or frappe.session.user == "Guest":
+        frappe.local.response.http_status_code = 401
+        return []
+    return frappe.db.get_list(
+        "Activity Type",
+        filters={"disabled": 0},
+        fields=["name", "billable", "default_costing_rate"],
+        order_by="name asc",
+        ignore_permissions=True,
+        limit_page_length=0,
+    )
+
+
+@frappe.whitelist()
+def get_project_tasks(project=None):
+    """Return open/working Tasks, optionally scoped to one project.
+
+    Same rationale as get_activity_types — the standard Task DocType
+    requires "Projects User" role for read.  PWA users without that
+    role can't populate the check-out task dropdown via REST.  Reads
+    with ignore_permissions=True for signed-in users only.
+    """
+    if not frappe.session.user or frappe.session.user == "Guest":
+        frappe.local.response.http_status_code = 401
+        return []
+    filters = {}
+    if project:
+        filters["project"] = project
+    return frappe.db.get_list(
+        "Task",
+        filters=filters,
+        fields=["name", "subject", "project", "status", "progress"],
+        order_by="modified desc",
+        ignore_permissions=True,
+        limit_page_length=100,
+    )
+
+
 def _ocr_month_key():
     return f"{OCR_CACHE_KEY}:{frappe.utils.nowdate()[:7]}"
 

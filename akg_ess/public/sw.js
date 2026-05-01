@@ -6,7 +6,7 @@
 //   - Other cross-origin : passthrough (CDN handles its own caching)
 // Bump CACHE_VERSION whenever you ship a new build.
 
-const CACHE_VERSION = 'akg-ess-v32';
+const CACHE_VERSION = 'akg-ess-v33';
 const STATIC_CACHE = `static-${CACHE_VERSION}`;
 const RUNTIME_CACHE = `runtime-${CACHE_VERSION}`;
 const TILE_CACHE = `osm-tiles-${CACHE_VERSION}`;
@@ -14,16 +14,16 @@ const TILE_MAX_ENTRIES = 600; // ~roughly Dubai metro at zoom 14–17
 
 const APP_SHELL = [
   '/ess',
-  '/assets/akg_ess/styles.css?v=32',
-  '/assets/akg_ess/data.js?v=32',
-  '/assets/akg_ess/api.js?v=32',
-  '/assets/akg_ess/ui.jsx?v=32',
-  '/assets/akg_ess/attendance.jsx?v=32',
-  '/assets/akg_ess/monthly-report.jsx?v=32',
-  '/assets/akg_ess/leaves.jsx?v=32',
-  '/assets/akg_ess/petty.jsx?v=32',
-  '/assets/akg_ess/profile.jsx?v=32',
-  '/assets/akg_ess/notifications.jsx?v=32',
+  '/assets/akg_ess/styles.css?v=33',
+  '/assets/akg_ess/data.js?v=33',
+  '/assets/akg_ess/api.js?v=33',
+  '/assets/akg_ess/ui.jsx?v=33',
+  '/assets/akg_ess/attendance.jsx?v=33',
+  '/assets/akg_ess/monthly-report.jsx?v=33',
+  '/assets/akg_ess/leaves.jsx?v=33',
+  '/assets/akg_ess/petty.jsx?v=33',
+  '/assets/akg_ess/profile.jsx?v=33',
+  '/assets/akg_ess/notifications.jsx?v=33',
   '/assets/akg_ess/manifest.webmanifest',
   '/assets/akg_ess/assets/akg-logo.png',
   '/assets/akg_ess/assets/icon-192.png',
