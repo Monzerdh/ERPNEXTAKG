@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "akg_ess"
-version = "0.1.15"
+version = "0.1.16"
 description = "Employee Self-Service PWA for AKG Contracting (attendance, leaves, petty cash)."
 requires-python = ">=3.10"
 readme = "README.md"
@@ -12,7 +12,18 @@ license = {text = "MIT"}
 authors = [
     {name = "AKG Contracting", email = "it@akg.ae"},
 ]
-dependencies = []
+dependencies = [
+    # setuptools<81 keeps pkg_resources in the default install path.
+    # Frappe core (e.g. frappe/integrations/doctype/dropbox_settings) and
+    # several integration controllers `import pkg_resources` at module
+    # load time.  setuptools 81+ moved pkg_resources to a separate
+    # package — without this pin, `bench migrate` on Python 3.13 fails
+    # with `ImportError: Module import failed for Dropbox Settings,
+    # No module named 'pkg_resources'`.  This isn't an akg_ess bug;
+    # adding the constraint here pins the bench's setuptools because
+    # pip resolves deps across the whole env.
+    "setuptools<81",
+]
 
 [tool.setuptools.packages.find]
 include = ["akg_ess*"]

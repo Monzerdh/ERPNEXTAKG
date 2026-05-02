@@ -1,1 +1,5 @@
-# frappe is supplied by the bench
+# frappe is supplied by the bench.
+# setuptools<81 keeps pkg_resources in the default install — see pyproject.toml
+# dependencies for the full rationale (Python 3.13 / Frappe Cloud bench migrate
+# fails to load Dropbox Settings without it).
+setuptools<81
