@@ -225,7 +225,7 @@ function SiteAttendanceScreen({ geofenceMode, offlineQueue, setOfflineQueue, isO
     toast(`${total} ${t.synced}`, 'ok');
   };
 
-  if (loading) return <div style={{ padding: 16 }}><Skeleton h={84} mb={12} /><Skeleton h={180} mb={12} /><Skeleton h={120} /></div>;
+  if (loading) return <AttendanceSkeleton />;
 
   const firstIn = sessions[0]?.in;
   const lastOut = [...sessions].reverse().find((s) => s.out)?.out;
@@ -257,12 +257,20 @@ function SiteAttendanceScreen({ geofenceMode, offlineQueue, setOfflineQueue, isO
         </div>
       )}
 
-      {/* Site hero — navy block mirroring the office-hero language.
-          Combines status pill + project label + embedded dark-tinted
-          map + 3-up stats footer (distance / accuracy / sites in radius). */}
-      <SiteHero sites={sites} myPos={myPos} match={match} />
+      {/* Site hero — day-state-aware navy block.  When checked in the stats
+          row shifts to live elapsed timer + today total; when not, it shows
+          distance + sites in radius. */}
+      <SiteHero
+        sites={sites}
+        myPos={myPos}
+        match={match}
+        isCheckedIn={isCheckedIn}
+        openSession={openSession}
+        sessions={sessions}
+        totalRaw={totalRaw}
+      />
 
-      {/* Big check-in/out button */}
+      {/* Big check-in/out button — single CTA copy split into label + sub */}
       <div style={{ marginTop: 14 }}>
         <button
           className={`checkin-button ${isCheckedIn ? 'out' : 'in'}`}
@@ -270,14 +278,16 @@ function SiteAttendanceScreen({ geofenceMode, offlineQueue, setOfflineQueue, isO
           disabled={acting}
         >
           {acting ? <span className="spinner" /> : <Icon name={isCheckedIn ? 'logout' : 'check'} size={26} />}
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 2 }}>
-            <span className="lt">
-              {isCheckedIn
-                ? `${t.checked_in_at} ${fmtTime(openSession.in.time)} · ${sessions.find((s) => s.project === openSession.project)?.siteName || ''}`
-                : (firstIn ? `${t.checked_out_at} ${fmtTime(lastOut?.time)}` : t.today)}
-            </span>
-            <span>{isCheckedIn ? t.check_out : t.check_in}</span>
-          </div>
+          <span className="checkin-button-label">
+            {isCheckedIn ? t.cta_check_out : t.cta_check_in}
+          </span>
+          <span className="checkin-button-sub truncate">
+            {isCheckedIn
+              ? `${fmtTime(openSession.in.time)} · ${sessions.find((s) => s.project === openSession.project)?.siteName || ''}`
+              : (firstIn
+                  ? `${t.checked_out_at} ${fmtTime(lastOut?.time)}`
+                  : (match.inside ? t.cta_check_in_sub : t.log_violation))}
+          </span>
         </button>
       </div>
 
@@ -300,21 +310,8 @@ function SiteAttendanceScreen({ geofenceMode, offlineQueue, setOfflineQueue, isO
         </div>
       </div>
 
-      {/* Monthly report entry */}
-      <button
-        className="card monthly-cta"
-        onClick={onOpenMonthlyReport}
-        style={{ marginTop: 14, display: 'flex', alignItems: 'center', gap: 12, width: '100%', textAlign: 'inherit', cursor: 'pointer', font: 'inherit', color: 'inherit' }}
-      >
-        <div style={{ width: 38, height: 38, borderRadius: 10, background: 'var(--navy-100)', color: 'var(--navy-700)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-          <Icon name="calendar" size={20} />
-        </div>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 14, fontWeight: 700 }}>{t.monthly_report_title}</div>
-          <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{t.monthly_report_sub}</div>
-        </div>
-        <Icon name="chevron" size={18} style={{ color: 'var(--text-muted)' }} />
-      </button>
+      {/* Monthly report entry — with inline KPI for this month */}
+      <MonthlyCtaCard checkins={checkins} sites={sites} onClick={onOpenMonthlyReport} />
 
       {/* Today's sessions */}
       {sessions.length > 0 && <TodaySessions sessions={sessions} />}
@@ -559,14 +556,14 @@ function OfficeAttendanceScreen({ offlineQueue, setOfflineQueue, isOffline, setI
             disabled={acting}
           >
             {acting ? <span className="spinner" /> : <Icon name={dayState === 'on_clock' ? 'logout' : 'check'} size={26} />}
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 2 }}>
-              <span className="lt">
-                {dayState === 'on_clock'
-                  ? `${t.checked_in_at} ${fmtTime(todayIn.time)}`
-                  : 'Tap to start your day'}
-              </span>
-              <span>{dayState === 'on_clock' ? t.check_out : t.check_in}</span>
-            </div>
+            <span className="checkin-button-label">
+              {dayState === 'on_clock' ? t.cta_check_out : t.cta_check_in}
+            </span>
+            <span className="checkin-button-sub truncate">
+              {dayState === 'on_clock'
+                ? `${t.checked_in_at} ${fmtTime(todayIn.time)}`
+                : t.cta_check_in_sub}
+            </span>
           </button>
         )}
       </div>
@@ -850,31 +847,159 @@ function pairSessions(events, sites) {
 }
 
 // ─── Today's sessions list ─────────────────────────────────────────────
+// Active session lifts to a highlighted "Currently working" row above the
+// closed sessions list — with a live elapsed timer.
 function TodaySessions({ sessions }) {
   const t = useT();
+  const active = sessions.find((s) => !s.out);
+  const closed = sessions.filter((s) => s.out);
   return (
     <div style={{ marginTop: 14 }}>
       <div className="section-label">{t.todays_sessions}</div>
-      <div className="card card-flush">
-        {sessions.map((s, i) => (
-          <div key={i} className="list-row">
-            <div className="list-row-icon" style={{ background: 'var(--navy-100)', color: 'var(--navy-700)', fontWeight: 700, fontSize: 12 }}>
-              {i + 1}
-            </div>
-            <div className="list-row-body">
-              <div className="list-row-title truncate">{s.siteName || t.unassigned_outside_short}</div>
-              <div className="list-row-sub">
-                {fmtTime(s.in.time)} → {s.out ? fmtTime(s.out.time) : <span style={{ color: 'var(--ok)', fontWeight: 600 }}>● {t.active_now}</span>}
-                {s.activity_type && ` · ${s.activity_type}`}
+
+      {active && <ActiveSessionCard session={active} />}
+
+      {closed.length > 0 && (
+        <div className="card card-flush" style={{ marginTop: active ? 8 : 0 }}>
+          {closed.map((s, i) => (
+            <div key={i} className="list-row">
+              <div className="list-row-icon" style={{ background: 'var(--navy-100)', color: 'var(--navy-700)', fontWeight: 700, fontSize: 12 }}>
+                {i + 1}
+              </div>
+              <div className="list-row-body">
+                <div className="list-row-title truncate">{s.siteName || t.unassigned_outside_short}</div>
+                <div className="list-row-sub">
+                  {fmtTime(s.in.time)} → {fmtTime(s.out.time)}
+                  {s.activity_type && ` · ${s.activity_type}`}
+                </div>
+              </div>
+              <div className="list-row-meta">
+                <div className="list-row-amount tabular">{(s.duration_min / 60).toFixed(1)}h</div>
+                {s.task && <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{s.task}</div>}
               </div>
             </div>
-            <div className="list-row-meta">
-              <div className="list-row-amount tabular">{s.out ? `${(s.duration_min / 60).toFixed(1)}h` : '—'}</div>
-              {s.task && <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{s.task}</div>}
-            </div>
-          </div>
-        ))}
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Highlighted card for the currently-active session — live elapsed timer.
+function ActiveSessionCard({ session }) {
+  const t = useT();
+  const [, setTick] = React.useState(0);
+  React.useEffect(() => {
+    const id = setInterval(() => setTick((n) => n + 1), 30000);
+    return () => clearInterval(id);
+  }, []);
+  const elapsedMin = Math.max(0, Math.round((Date.now() - +new Date(session.in.time.replace(' ', 'T'))) / 60000));
+  const h = Math.floor(elapsedMin / 60);
+  const m = elapsedMin % 60;
+  return (
+    <div className="active-session-card">
+      <div className="active-session-stripe" />
+      <div className="active-session-body">
+        <div className="active-session-head">
+          <span className="active-session-pill">
+            <span className="active-session-pill-dot" />
+            {t.live_now} · {t.active_session_title}
+          </span>
+        </div>
+        <div className="active-session-title truncate">{session.siteName || t.unassigned_outside_short}</div>
+        <div className="active-session-sub">
+          {fmtTime(session.in.time)} → <span className="muted-on-tile">{t.active_now}</span>
+          {session.activity_type && ` · ${session.activity_type}`}
+        </div>
       </div>
+      <div className="active-session-timer">
+        <div className="active-session-timer-value tabular">
+          {String(h).padStart(2, '0')}<span className="sep">:</span>{String(m).padStart(2, '0')}
+        </div>
+        <div className="active-session-timer-label">{t.elapsed}</div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Monthly attendance CTA — shows live KPI ("21 days · 1 absent") ────
+function MonthlyCtaCard({ checkins, sites, onClick }) {
+  const t = useT();
+  const now = new Date();
+  const ym = now.toISOString().slice(0, 7);
+  const presentDays = new Set(
+    (checkins || [])
+      .filter((c) => c.log_type === 'IN' && c.time && c.time.startsWith(ym))
+      .map((c) => c.time.slice(0, 10))
+  ).size;
+  // Working days elapsed = weekdays from 1st to today; UAE skips Fri/Sat.
+  let workingElapsed = 0;
+  for (let d = 1; d <= now.getDate(); d++) {
+    const wd = new Date(now.getFullYear(), now.getMonth(), d).getDay();
+    if (wd !== 5 && wd !== 6) workingElapsed++;
+  }
+  const absent = Math.max(0, workingElapsed - presentDays);
+  return (
+    <button
+      className="card monthly-cta"
+      onClick={onClick}
+      style={{ marginTop: 14, display: 'flex', alignItems: 'center', gap: 12, width: '100%', textAlign: 'inherit', cursor: 'pointer', font: 'inherit', color: 'inherit' }}
+    >
+      <div style={{ width: 38, height: 38, borderRadius: 10, background: 'var(--navy-100)', color: 'var(--navy-700)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+        <Icon name="calendar" size={20} />
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 14, fontWeight: 700 }}>{t.monthly_report_title}</div>
+        <div style={{ fontSize: 11, color: 'var(--text-muted)', display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginTop: 2 }}>
+          {presentDays > 0 ? (
+            <span><b style={{ color: 'var(--text)' }}>{presentDays}</b> {t.days_present}</span>
+          ) : (
+            <span>{t.this_month}</span>
+          )}
+          {absent > 0 && (
+            <>
+              <span style={{ color: 'var(--ink-300)' }}>·</span>
+              <span><b style={{ color: 'var(--bad)' }}>{absent}</b> {(t.absent || 'absent').toLowerCase()}</span>
+            </>
+          )}
+        </div>
+      </div>
+      <Icon name="chevron" size={18} style={{ color: 'var(--text-muted)' }} />
+    </button>
+  );
+}
+
+// ─── Skeleton matching the new hero shape ──────────────────────────────
+function AttendanceSkeleton() {
+  return (
+    <div style={{ padding: 0 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 14 }}>
+        <div style={{ flex: 1 }}>
+          <Skeleton h={12} w="40%" mb={6} />
+          <Skeleton h={22} w="55%" />
+        </div>
+      </div>
+      <div className="site-hero-skeleton">
+        <div className="site-hero-skeleton-head">
+          <Skeleton h={14} w={110} mb={8} />
+          <Skeleton h={20} w="60%" mb={4} />
+          <Skeleton h={11} w="40%" />
+        </div>
+        <div className="site-hero-skeleton-map" />
+        <div className="site-hero-skeleton-stats">
+          {[0, 1, 2].map((i) => (
+            <div key={i} style={{ flex: 1 }}>
+              <Skeleton h={9} w="50%" mb={6} />
+              <Skeleton h={20} w="70%" mb={4} />
+              <Skeleton h={9} w="40%" />
+            </div>
+          ))}
+        </div>
+        <div className="site-hero-skeleton-stripe" />
+      </div>
+      <Skeleton h={84} mb={12} style={{ marginTop: 14 }} />
+      <Skeleton h={64} mb={12} />
+      <Skeleton h={120} />
     </div>
   );
 }
@@ -1073,13 +1198,11 @@ function CheckoutModal({ project, activityTypes, sites, onCancel, onConfirm, loa
 // real geography, which surprised users who didn't know which way was north.
 // ─── Site hero ─────────────────────────────────────────────────────────
 // Navy block that mirrors the office-hero visual language for site
-// (engineer) attendance.  Composition top → bottom:
-//   1. Header: status pill (INSIDE/OUTSIDE PROJECT ZONE) + project name + sub
-//   2. Embedded dark-tinted Leaflet map (real OSM tiles, CSS-filtered)
-//   3. Glass chips overlaid on the map: distance + Live legend
-//   4. 3-up stats footer: From-center · Accuracy · Sites in view
-//   5. Hi-vis bottom stripe (green-y when inside, warn-y when outside)
-function SiteHero({ sites, myPos, match }) {
+// (engineer) attendance.  Day-state-aware: status pill reflects
+// 'On the clock' / 'Checked out for the day' / 'Not checked in', and
+// the 3-up stats row shifts to show live elapsed time + today total
+// when checked in, vs. distance + sites count when not.
+function SiteHero({ sites, myPos, match, isCheckedIn, openSession, sessions = [], totalRaw = 0 }) {
   const t = useT();
   const inside = !!match.inside;
   const distLabel = match.distance >= 1000 ? `${(match.distance / 1000).toFixed(1)}` : `${match.distance}`;
@@ -1089,13 +1212,34 @@ function SiteHero({ sites, myPos, match }) {
     ? { lat: match.site.lat ?? match.site.site_latitude, lng: match.site.lng ?? match.site.site_longitude }
     : (myPos && myPos.lat != null ? { lat: myPos.lat, lng: myPos.lng } : null);
 
+  // Live elapsed-on-site (mins) when checked in — auto-tick every 60s.
+  const [, setTick] = React.useState(0);
+  React.useEffect(() => {
+    if (!isCheckedIn) return;
+    const id = setInterval(() => setTick((n) => n + 1), 60000);
+    return () => clearInterval(id);
+  }, [isCheckedIn]);
+  let elapsedMin = 0;
+  if (isCheckedIn && openSession?.in?.time) {
+    elapsedMin = Math.max(0, Math.round((Date.now() - +new Date(openSession.in.time.replace(' ', 'T'))) / 60000));
+  }
+  const elapsedH = Math.floor(elapsedMin / 60);
+  const elapsedM = elapsedMin % 60;
+
+  // Status pill copy reflects actual day state, not just geofence.
+  const dayDone = !isCheckedIn && (sessions || []).some((s) => s.out);
+  const statusText = isCheckedIn
+    ? (inside ? t.inside_zone : t.outside_zone)
+    : (dayDone ? t.checked_out_for_day : t.not_checked_in);
+  const showLogHint = !inside && !isCheckedIn;
+
   return (
-    <div className={`site-hero ${inside ? 'is-inside' : 'is-outside'}`}>
+    <div className={`site-hero ${inside ? 'is-inside' : 'is-outside'} ${isCheckedIn ? 'is-on-clock' : ''}`}>
       <div className="site-hero-head">
         <div className="site-hero-head-body">
           <span className="site-hero-status">
             <span className="site-hero-status-dot" />
-            {inside ? t.inside_zone : t.outside_zone}
+            {statusText}
           </span>
           <div className="site-hero-project truncate">
             {inside
@@ -1108,7 +1252,14 @@ function SiteHero({ sites, myPos, match }) {
               ? <><b>{match.site.client || match.site.name}</b> · {match.distance}{t.from_center}</>
               : <>{t.distance_to_nearest} · <b>{match.distance}{t.meters_away}</b></>}
           </div>
+          {showLogHint && (
+            <div className="site-hero-hint">
+              <Icon name="warn" size={11} />
+              <span>{t.tap_to_log_violation}</span>
+            </div>
+          )}
         </div>
+        <SiteHeroClock />
       </div>
 
       <div className="site-hero-map">
@@ -1134,30 +1285,73 @@ function SiteHero({ sites, myPos, match }) {
 
       <div className="site-hero-stats">
         <div className="site-hero-stat">
-          <div className="site-hero-stat-label">{inside ? 'From center' : 'Distance'}</div>
-          <div className="site-hero-stat-value">
-            {distLabel}<span className="unit">{distUnit}</span>
+          <div className="site-hero-stat-label">
+            {isCheckedIn ? t.on_site_since : (inside ? t.from_center_short : t.distance_short)}
+          </div>
+          <div className="site-hero-stat-value tabular">
+            {isCheckedIn && openSession?.in
+              ? <>{fmtTime(openSession.in.time)}</>
+              : <>{distLabel}<span className="unit">{distUnit}</span></>}
           </div>
           <div className="site-hero-stat-sub">
-            <Icon name="pin" size={11} />
-            {match.site?.name || '—'}
+            {isCheckedIn ? (
+              <>
+                <span className="live-dot" />
+                {elapsedH}h {String(elapsedM).padStart(2, '0')}m {t.elapsed.toLowerCase()}
+              </>
+            ) : (
+              <><Icon name="pin" size={11} />{match.site?.name || '—'}</>
+            )}
           </div>
         </div>
         <div className="site-hero-divider" />
         <div className="site-hero-stat">
-          <div className="site-hero-stat-label">Accuracy</div>
+          <div className="site-hero-stat-label">{t.accuracy_short}</div>
           <div className="site-hero-stat-value">±{acc}<span className="unit">m</span></div>
           <div className="site-hero-stat-sub">
-            <span className="live-dot" /> GPS live
+            <span className="live-dot" /> {t.gps_live}
           </div>
         </div>
         <div className="site-hero-divider" />
         <div className="site-hero-stat">
-          <div className="site-hero-stat-label">Sites</div>
-          <div className="site-hero-stat-value">{sites.length}</div>
-          <div className="site-hero-stat-sub">in radius</div>
+          <div className="site-hero-stat-label">{isCheckedIn ? t.today : t.sites_short}</div>
+          <div className="site-hero-stat-value tabular">
+            {isCheckedIn
+              ? <>{(totalRaw / 60).toFixed(1)}<span className="unit">h</span></>
+              : sites.length}
+          </div>
+          <div className="site-hero-stat-sub">
+            {isCheckedIn ? `${(sessions || []).length} ${t.sessions.toLowerCase()}` : t.in_radius}
+          </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+// Embedded clock for the engineer site hero (mirrors office-hero pattern).
+function SiteHeroClock() {
+  const [now, setNow] = React.useState(new Date());
+  React.useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(id);
+  }, []);
+  const ctx = useLang ? useLang() : { lang: 'en' };
+  const lang = (ctx && ctx.lang) || 'en';
+  const locale = lang === 'ar' ? 'ar-AE' : 'en-GB';
+  const hh = String(now.getHours()).padStart(2, '0');
+  const mm = String(now.getMinutes()).padStart(2, '0');
+  const ss = String(now.getSeconds()).padStart(2, '0');
+  const date = now.toLocaleDateString(locale, { weekday: 'long', day: 'numeric', month: 'long' });
+  return (
+    <div className="site-hero-clock office-clock" aria-label="Current time">
+      <div className="office-clock-time tabular">
+        <span>{hh}</span>
+        <span className="office-clock-sep">:</span>
+        <span>{mm}</span>
+        <span className="office-clock-sec tabular">{ss}</span>
+      </div>
+      <div className="office-clock-date">{date}</div>
     </div>
   );
 }
@@ -1187,38 +1381,56 @@ function MiniMap({ sites, myPos, match }) {
 
 function WeeklyTimesheet({ checkins, sites }) {
   const t = useT();
+  const todayKey = new Date().toISOString().slice(0, 10);
   const days = [];
   for (let i = 6; i >= 0; i--) {
     const d = new Date(); d.setDate(d.getDate() - i);
     const key = d.toISOString().slice(0, 10);
     const dayEvents = checkins.filter((c) => c.time.startsWith(key)).sort((a, b) => a.time.localeCompare(b.time));
     const sessions = pairSessions(dayEvents, sites);
-    const hrs = sessions.reduce((a, s) => a + (s.duration_min || 0), 0) / 60;
+    let hrs = sessions.reduce((acc, s) => {
+      if (s.out) return acc + (s.duration_min || 0) / 60;
+      // Live-tally any open session if it's today
+      if (s.in && key === todayKey) {
+        return acc + Math.max(0, (Date.now() - +new Date(s.in.time.replace(' ', 'T'))) / 3600000);
+      }
+      return acc;
+    }, 0);
+    hrs = Math.round(hrs * 10) / 10;
     const site = sessions[0] ? sites.find((s) => s.name === sessions[0].project) : null;
-    days.push({ d, key, hrs: Math.round(hrs * 10) / 10, site });
+    days.push({ d, key, hrs, site, isToday: key === todayKey });
   }
-  const max = Math.max(10, ...days.map((x) => x.hrs));
+  const max = Math.max(8, ...days.map((x) => x.hrs));
+  const total = days.reduce((a, b) => a + b.hrs, 0);
 
   return (
     <div className="card" style={{ marginTop: 14 }}>
-      <div className="row-between" style={{ marginBottom: 10 }}>
-        <div className="card-title">{t.weekly_timesheet}</div>
-        <div className="muted" style={{ fontSize: 11 }}>{days.reduce((a, b) => a + b.hrs, 0).toFixed(1)}h</div>
+      <div className="row-between" style={{ marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div>
+          <div className="card-title">{t.weekly_timesheet}</div>
+          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+            {t.this_week || 'This week'} · {total.toFixed(1)}h
+          </div>
+        </div>
+        <span className="chip chip-info">{(total / 7).toFixed(1)}h {t.avg_per_day || 'avg/day'}</span>
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 6, alignItems: 'end', height: 88 }}>
+      <div className="office-week" style={{ gridTemplateColumns: 'repeat(7, 1fr)' }}>
         {days.map((x) => (
-          <div key={x.key} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, height: '100%' }}>
-            <div style={{ flex: 1, width: '100%', display: 'flex', alignItems: 'flex-end' }}>
-              <div style={{
-                width: '100%',
-                height: `${(x.hrs / max) * 100}%`,
-                minHeight: x.hrs > 0 ? 4 : 0,
-                background: x.site?.color || 'var(--ink-300)',
-                borderRadius: '4px 4px 0 0',
-                opacity: x.hrs > 0 ? 1 : 0.3,
-              }} title={`${x.hrs}h`} />
+          <div key={x.key} className={`office-week-col ${x.isToday ? 'is-today' : ''}`}>
+            <div className="office-week-bar-track">
+              <div
+                className="office-week-bar"
+                style={{
+                  height: `${(x.hrs / max) * 100}%`,
+                  background: x.site?.color || (x.isToday ? 'var(--hivis)' : 'var(--ink-300)'),
+                }}
+                title={`${x.hrs}h`}
+              >
+                {x.hrs > 0 && <span className="office-week-bar-num tabular">{x.hrs.toFixed(1)}</span>}
+              </div>
             </div>
-            <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{x.d.toLocaleDateString([], { weekday: 'narrow' })}</div>
+            <div className="office-week-day">{x.d.toLocaleDateString([], { weekday: 'short' }).slice(0, 3)}</div>
+            <div className="office-week-date tabular">{x.d.getDate()}</div>
           </div>
         ))}
       </div>
@@ -1286,6 +1498,23 @@ function OutsideZonePopup({ ctx, sites, onCancel, onSubmit, loading }) {
               <div className="tabular" style={{ fontSize: 15, fontWeight: 700, color: 'var(--warn)' }}>{distLabel}</div>
               <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{t.away_from}</div>
             </div>
+          </div>
+
+          {/* Impact preview — what happens after submit */}
+          <div className="violation-impact">
+            <div className="violation-impact-icon">
+              <Icon name="user" size={14} />
+            </div>
+            <div className="violation-impact-body">
+              <div className="violation-impact-title">{t.day_will_be_held}</div>
+              <div className="violation-impact-sub">
+                <Icon name="user" size={11} />
+                {t.manager_review}: <b>{(window.CURRENT_USER && (window.CURRENT_USER.leave_approver_name || window.CURRENT_USER.leave_approver || window.CURRENT_USER.reports_to_name)) || '—'}</b>
+              </div>
+            </div>
+            <span className="chip chip-warn chip-dot">
+              <Icon name="warn" size={11} /> {t.pending_review}
+            </span>
           </div>
 
           {/* Project picker */}

@@ -1387,3 +1387,173 @@ input, textarea, select { font-family: inherit; font-size: inherit; }
     radial-gradient(120% 80% at 100% 0%, rgba(232,180,0,.18) 0%, transparent 55%),
     linear-gradient(180deg, #1A2C46 0%, #0F1E33 100%);
 }
+
+/* ─── Check-in button label/sub stack (replaces legacy .lt) ─────────── */
+.checkin-button { flex-wrap: wrap; align-content: center; row-gap: 2px; }
+.checkin-button-label {
+  font-size: 17px; font-weight: 700;
+  letter-spacing: 0.04em; line-height: 1.1;
+  text-transform: uppercase;
+}
+[dir="rtl"] .checkin-button-label { letter-spacing: 0; text-transform: none; }
+.checkin-button-sub {
+  flex-basis: 100%;
+  text-align: center;
+  font-size: 11px; font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  opacity: 0.85;
+  max-width: 100%;
+}
+[dir="rtl"] .checkin-button-sub { letter-spacing: 0; text-transform: none; }
+
+/* ─── Site hero — on-clock variant + hint + embedded clock ────────── */
+.site-hero.is-on-clock {
+  background:
+    radial-gradient(120% 80% at 100% 0%, rgba(74,222,128,.16) 0%, transparent 55%),
+    linear-gradient(180deg, #102B22 0%, #0B1A14 100%);
+  border-color: rgba(74,222,128,.18);
+}
+.site-hero.is-on-clock .site-hero-status-dot { background: #4ADE80; box-shadow: 0 0 0 4px rgba(74,222,128,.18); }
+.site-hero-hint {
+  display: inline-flex; align-items: center; gap: 6px;
+  margin-top: 6px;
+  padding: 4px 8px; border-radius: 999px;
+  background: rgba(242,192,18,.12);
+  color: var(--hivis);
+  font-size: 11px; font-weight: 600;
+  letter-spacing: 0.02em;
+  border: 1px solid rgba(242,192,18,.28);
+}
+.site-hero-clock {
+  flex-shrink: 0;
+  text-align: end;
+  color: rgba(255,255,255,.85);
+}
+.site-hero-clock .office-clock-time { font-size: 22px; font-weight: 800; letter-spacing: -0.02em; line-height: 1; }
+.site-hero-clock .office-clock-sep { color: var(--hivis); animation: blinkClockSep 1.1s steps(2,end) infinite; }
+.site-hero-clock .office-clock-sec { font-size: 12px; opacity: 0.7; margin-inline-start: 4px; font-weight: 600; }
+.site-hero-clock .office-clock-date { font-size: 10.5px; color: rgba(255,255,255,.55); margin-top: 3px; }
+@keyframes blinkClockSep { 50% { opacity: 0.35; } }
+
+/* ─── Active session card (currently working) ─────────────────────── */
+.active-session-card {
+  position: relative;
+  display: flex; align-items: stretch; gap: 0;
+  padding: 12px 14px 12px 16px;
+  background: linear-gradient(135deg, rgba(74,222,128,.08), rgba(74,222,128,.02));
+  border: 1px solid rgba(74,222,128,.32);
+  border-radius: var(--radius);
+  overflow: hidden;
+  box-shadow: 0 1px 2px rgba(15,30,51,.04);
+}
+.active-session-stripe {
+  position: absolute; left: 0; top: 0; bottom: 0;
+  width: 4px;
+  background: linear-gradient(180deg, var(--ok) 0%, #16A34A 100%);
+}
+[dir="rtl"] .active-session-stripe { left: auto; right: 0; }
+.active-session-body { flex: 1; min-width: 0; }
+.active-session-head { margin-bottom: 4px; }
+.active-session-pill {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 2px 8px; border-radius: 999px;
+  background: rgba(21,128,61,.12);
+  color: var(--ok);
+  font-size: 10.5px; font-weight: 700;
+  letter-spacing: 0.06em; text-transform: uppercase;
+}
+.active-session-pill-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--ok);
+  box-shadow: 0 0 0 3px rgba(74,222,128,.25);
+  animation: livePulse 1.6s ease-in-out infinite;
+}
+@keyframes livePulse {
+  0%, 100% { box-shadow: 0 0 0 3px rgba(74,222,128,.25); }
+  50%      { box-shadow: 0 0 0 6px rgba(74,222,128,.05); }
+}
+.active-session-title {
+  font-size: 14px; font-weight: 700;
+  color: var(--text);
+  letter-spacing: -0.01em;
+  margin-top: 2px;
+}
+.active-session-sub {
+  font-size: 11.5px; color: var(--text-muted);
+  margin-top: 2px;
+}
+.active-session-timer {
+  flex-shrink: 0;
+  text-align: end;
+  margin-inline-start: 12px;
+  display: flex; flex-direction: column; align-items: flex-end; justify-content: center;
+}
+.active-session-timer-value {
+  font-size: 22px; font-weight: 800;
+  color: var(--ok);
+  letter-spacing: -0.02em;
+  line-height: 1;
+}
+.active-session-timer-value .sep { color: var(--ok); margin: 0 1px; opacity: 0.7; }
+.active-session-timer-label {
+  font-size: 9.5px; font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-top: 4px;
+}
+.muted-on-tile { color: var(--text-muted); font-weight: 500; }
+
+/* ─── Attendance skeleton (matches new hero shape) ────────────────── */
+.site-hero-skeleton {
+  position: relative;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+.site-hero-skeleton-head { padding: 14px 16px 8px; }
+.site-hero-skeleton-map {
+  height: 200px;
+  background: repeating-linear-gradient(45deg, var(--ink-100) 0 12px, var(--ink-50) 12px 24px);
+  opacity: .7;
+}
+.site-hero-skeleton-stats {
+  display: flex; gap: 14px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--border);
+}
+.site-hero-skeleton-stripe {
+  height: 3px;
+  background: repeating-linear-gradient(90deg, var(--hivis) 0 14px, var(--ink-200) 14px 22px);
+  opacity: .5;
+}
+
+/* ─── Violation impact block (OutsideZonePopup) ───────────────────── */
+.violation-impact {
+  margin-top: 12px;
+  padding: 10px 12px;
+  background: var(--warn-100);
+  border: 1px solid rgba(242,192,18,.28);
+  border-radius: 10px;
+  display: flex; align-items: center; gap: 10px;
+}
+.violation-impact-icon {
+  width: 30px; height: 30px; border-radius: 8px;
+  background: rgba(242,192,18,.18);
+  color: var(--warn-700, var(--hivis-700));
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.violation-impact-body { flex: 1; min-width: 0; }
+.violation-impact-title {
+  font-size: 12.5px; font-weight: 700;
+  color: var(--text);
+  letter-spacing: -0.005em;
+}
+.violation-impact-sub {
+  margin-top: 3px;
+  font-size: 11px; color: var(--text-muted);
+  display: inline-flex; align-items: center; gap: 5px;
+}
