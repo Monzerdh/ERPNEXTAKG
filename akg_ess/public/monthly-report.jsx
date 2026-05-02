@@ -35,7 +35,10 @@ function MonthlyReport({ role, onBack }) {
   const monthMax = new Date(today.getFullYear(), today.getMonth() + 1, 1);
   const isCurrentMax = year === monthMax.getFullYear() && month === monthMax.getMonth() + 1;
 
-  // Build display grid: Monday-first (UAE Mon–Fri working week, Sat+Sun weekend)
+  // Build display grid: Monday-first. AKG default: Mon–Sat are working
+  // days, Sunday is the weekend column at the end of each row. Employees
+  // who work on Sunday still get a 'present' tile — only empty Sundays
+  // render as 'weekend'.
   const firstDow = data ? new Date(year, month - 1, 1).getDay() : 0;
   // dow: Sun=0 Mon=1 ... Sat=6  → display index: Mon=0 Tue=1 Wed=2 Thu=3 Fri=4 Sat=5 Sun=6
   const dowToCol = (dow) => (dow + 6) % 7;

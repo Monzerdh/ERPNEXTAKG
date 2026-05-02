@@ -856,7 +856,10 @@
       const dt = new Date(year, month - 1, d);
       const iso = dt.toISOString().slice(0, 10);
       const dow = dt.getDay();
-      const isWeekend = dow === 5 || dow === 6;
+      // AKG default: Sunday is the only weekend day. Employees may still
+      // work on Sundays — that path falls through to the IN/OUT logic
+      // below and gets logged as 'present', no overtime calc here.
+      const isWeekend = dow === 0;
       const isFuture = iso > todayStr;
       let status = 'absent', hours = 0, sessions = 0, inTime = null;
 

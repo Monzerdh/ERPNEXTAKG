@@ -932,11 +932,14 @@ function MonthlyCtaCard({ checkins, sites, onClick }) {
       .filter((c) => c.log_type === 'IN' && c.time && c.time.startsWith(ym))
       .map((c) => c.time.slice(0, 10))
   ).size;
-  // Working days elapsed = weekdays from 1st to today; UAE skips Fri/Sat.
+  // Working days elapsed = days from 1st to today minus Sundays. AKG
+  // default weekend is Sunday only; an employee working on a Sunday is
+  // tracked as present elsewhere — Sundays just don't count toward
+  // "expected working days" for the absent KPI.
   let workingElapsed = 0;
   for (let d = 1; d <= now.getDate(); d++) {
     const wd = new Date(now.getFullYear(), now.getMonth(), d).getDay();
-    if (wd !== 5 && wd !== 6) workingElapsed++;
+    if (wd !== 0) workingElapsed++;
   }
   const absent = Math.max(0, workingElapsed - presentDays);
   return (
