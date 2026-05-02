@@ -64,6 +64,14 @@ fixtures = [
         "doctype": "Role",
         "filters": [["role_name", "in", ["ESS User", "ESS Manager"]]],
     },
+    # Permissions for ESS roles on standard ERPNext DocTypes (Project,
+    # Employee Checkin, Leave Application, Expense Claim, etc).
+    # Permissions on custom DocTypes (Geofence Violation, Petty Cash
+    # Top-up Request, ESS Notification) live in their JSON definitions.
+    {
+        "doctype": "Custom DocPerm",
+        "filters": [["role", "in", ["ESS User", "ESS Manager"]]],
+    },
 ]
 
 # ──────────────────────────────────────────────────────────────────────

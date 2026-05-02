@@ -1,0 +1,236 @@
+[
+ {
+  "doctype": "Custom DocPerm",
+  "parent": "Employee", "parenttype": "DocType", "parentfield": "permissions",
+  "role": "ESS User", "permlevel": 0,
+  "read": 1, "write": 0, "create": 0, "delete": 0, "submit": 0, "cancel": 0,
+  "report": 0, "export": 0, "share": 0, "print": 0, "email": 0,
+  "if_owner": 1,
+  "name": "ESS User-Employee-perm"
+ },
+ {
+  "doctype": "Custom DocPerm",
+  "parent": "Employee", "parenttype": "DocType", "parentfield": "permissions",
+  "role": "ESS Manager", "permlevel": 0,
+  "read": 1, "write": 0, "create": 0, "delete": 0, "submit": 0, "cancel": 0,
+  "report": 0, "export": 0, "share": 0, "print": 0, "email": 0,
+  "if_owner": 0,
+  "name": "ESS Manager-Employee-perm"
+ },
+
+ {
+  "doctype": "Custom DocPerm",
+  "parent": "Project", "parenttype": "DocType", "parentfield": "permissions",
+  "role": "ESS User", "permlevel": 0,
+  "read": 1, "write": 0, "create": 0, "delete": 0,
+  "report": 0, "export": 0, "share": 0, "print": 0, "email": 0,
+  "name": "ESS User-Project-perm"
+ },
+ {
+  "doctype": "Custom DocPerm",
+  "parent": "Project", "parenttype": "DocType", "parentfield": "permissions",
+  "role": "ESS Manager", "permlevel": 0,
+  "read": 1, "write": 0, "create": 0, "delete": 0,
+  "report": 0, "export": 0, "share": 0, "print": 0, "email": 0,
+  "name": "ESS Manager-Project-perm"
+ },
+
+ {
+  "doctype": "Custom DocPerm",
+  "parent": "Activity Type", "parenttype": "DocType", "parentfield": "permissions",
+  "role": "ESS User", "permlevel": 0,
+  "read": 1, "write": 0, "create": 0, "delete": 0,
+  "report": 0, "export": 0, "share": 0, "print": 0, "email": 0,
+  "name": "ESS User-Activity Type-perm"
+ },
+ {
+  "doctype": "Custom DocPerm",
+  "parent": "Activity Type", "parenttype": "DocType", "parentfield": "permissions",
+  "role": "ESS Manager", "permlevel": 0,
+  "read": 1, "write": 0, "create": 0, "delete": 0,
+  "report": 0, "export": 0, "share": 0, "print": 0, "email": 0,
+  "name": "ESS Manager-Activity Type-perm"
+ },
+
+ {
+  "doctype": "Custom DocPerm",
+  "parent": "Task", "parenttype": "DocType", "parentfield": "permissions",
+  "role": "ESS User", "permlevel": 0,
+  "read": 1, "write": 0, "create": 0, "delete": 0,
+  "report": 0, "export": 0, "share": 0, "print": 0, "email": 0,
+  "name": "ESS User-Task-perm"
+ },
+ {
+  "doctype": "Custom DocPerm",
+  "parent": "Task", "parenttype": "DocType", "parentfield": "permissions",
+  "role": "ESS Manager", "permlevel": 0,
+  "read": 1, "write": 0, "create": 0, "delete": 0,
+  "report": 0, "export": 0, "share": 0, "print": 0, "email": 0,
+  "name": "ESS Manager-Task-perm"
+ },
+
+ {
+  "doctype": "Custom DocPerm",
+  "parent": "Employee Checkin", "parenttype": "DocType", "parentfield": "permissions",
+  "role": "ESS User", "permlevel": 0,
+  "read": 1, "write": 1, "create": 1, "delete": 0,
+  "report": 0, "export": 0, "share": 0, "print": 0, "email": 0,
+  "if_owner": 1,
+  "name": "ESS User-Employee Checkin-perm"
+ },
+ {
+  "doctype": "Custom DocPerm",
+  "parent": "Employee Checkin", "parenttype": "DocType", "parentfield": "permissions",
+  "role": "ESS Manager", "permlevel": 0,
+  "read": 1, "write": 0, "create": 0, "delete": 0,
+  "report": 0, "export": 0, "share": 0, "print": 0, "email": 0,
+  "if_owner": 0,
+  "name": "ESS Manager-Employee Checkin-perm"
+ },
+
+ {
+  "doctype": "Custom DocPerm",
+  "parent": "Leave Allocation", "parenttype": "DocType", "parentfield": "permissions",
+  "role": "ESS User", "permlevel": 0,
+  "read": 1, "write": 0, "create": 0, "delete": 0,
+  "report": 0, "export": 0, "share": 0, "print": 0, "email": 0,
+  "if_owner": 1,
+  "name": "ESS User-Leave Allocation-perm"
+ },
+ {
+  "doctype": "Custom DocPerm",
+  "parent": "Leave Allocation", "parenttype": "DocType", "parentfield": "permissions",
+  "role": "ESS Manager", "permlevel": 0,
+  "read": 1, "write": 0, "create": 0, "delete": 0,
+  "report": 0, "export": 0, "share": 0, "print": 0, "email": 0,
+  "if_owner": 0,
+  "name": "ESS Manager-Leave Allocation-perm"
+ },
+
+ {
+  "doctype": "Custom DocPerm",
+  "parent": "Leave Period", "parenttype": "DocType", "parentfield": "permissions",
+  "role": "ESS User", "permlevel": 0,
+  "read": 1, "write": 0, "create": 0, "delete": 0,
+  "report": 0, "export": 0, "share": 0, "print": 0, "email": 0,
+  "name": "ESS User-Leave Period-perm"
+ },
+ {
+  "doctype": "Custom DocPerm",
+  "parent": "Leave Period", "parenttype": "DocType", "parentfield": "permissions",
+  "role": "ESS Manager", "permlevel": 0,
+  "read": 1, "write": 0, "create": 0, "delete": 0,
+  "report": 0, "export": 0, "share": 0, "print": 0, "email": 0,
+  "name": "ESS Manager-Leave Period-perm"
+ },
+
+ {
+  "doctype": "Custom DocPerm",
+  "parent": "Leave Application", "parenttype": "DocType", "parentfield": "permissions",
+  "role": "ESS User", "permlevel": 0,
+  "read": 1, "write": 1, "create": 1, "delete": 1, "submit": 1, "cancel": 1,
+  "report": 0, "export": 0, "share": 0, "print": 0, "email": 0,
+  "if_owner": 1,
+  "name": "ESS User-Leave Application-perm"
+ },
+ {
+  "doctype": "Custom DocPerm",
+  "parent": "Leave Application", "parenttype": "DocType", "parentfield": "permissions",
+  "role": "ESS Manager", "permlevel": 0,
+  "read": 1, "write": 1, "create": 0, "delete": 0, "submit": 1, "cancel": 1,
+  "report": 0, "export": 0, "share": 0, "print": 0, "email": 0,
+  "if_owner": 0,
+  "name": "ESS Manager-Leave Application-perm"
+ },
+
+ {
+  "doctype": "Custom DocPerm",
+  "parent": "Expense Claim", "parenttype": "DocType", "parentfield": "permissions",
+  "role": "ESS User", "permlevel": 0,
+  "read": 1, "write": 1, "create": 1, "delete": 1, "submit": 1, "cancel": 1,
+  "report": 0, "export": 0, "share": 0, "print": 0, "email": 0,
+  "if_owner": 1,
+  "name": "ESS User-Expense Claim-perm"
+ },
+ {
+  "doctype": "Custom DocPerm",
+  "parent": "Expense Claim", "parenttype": "DocType", "parentfield": "permissions",
+  "role": "ESS Manager", "permlevel": 0,
+  "read": 1, "write": 1, "create": 0, "delete": 0, "submit": 1, "cancel": 1,
+  "report": 0, "export": 0, "share": 0, "print": 0, "email": 0,
+  "if_owner": 0,
+  "name": "ESS Manager-Expense Claim-perm"
+ },
+
+ {
+  "doctype": "Custom DocPerm",
+  "parent": "Expense Claim Type", "parenttype": "DocType", "parentfield": "permissions",
+  "role": "ESS User", "permlevel": 0,
+  "read": 1, "write": 0, "create": 0, "delete": 0,
+  "report": 0, "export": 0, "share": 0, "print": 0, "email": 0,
+  "name": "ESS User-Expense Claim Type-perm"
+ },
+ {
+  "doctype": "Custom DocPerm",
+  "parent": "Expense Claim Type", "parenttype": "DocType", "parentfield": "permissions",
+  "role": "ESS Manager", "permlevel": 0,
+  "read": 1, "write": 0, "create": 0, "delete": 0,
+  "report": 0, "export": 0, "share": 0, "print": 0, "email": 0,
+  "name": "ESS Manager-Expense Claim Type-perm"
+ },
+
+ {
+  "doctype": "Custom DocPerm",
+  "parent": "Employee Advance", "parenttype": "DocType", "parentfield": "permissions",
+  "role": "ESS User", "permlevel": 0,
+  "read": 1, "write": 0, "create": 0, "delete": 0,
+  "report": 0, "export": 0, "share": 0, "print": 0, "email": 0,
+  "if_owner": 1,
+  "name": "ESS User-Employee Advance-perm"
+ },
+ {
+  "doctype": "Custom DocPerm",
+  "parent": "Employee Advance", "parenttype": "DocType", "parentfield": "permissions",
+  "role": "ESS Manager", "permlevel": 0,
+  "read": 1, "write": 0, "create": 0, "delete": 0,
+  "report": 0, "export": 0, "share": 0, "print": 0, "email": 0,
+  "if_owner": 1,
+  "name": "ESS Manager-Employee Advance-perm"
+ },
+
+ {
+  "doctype": "Custom DocPerm",
+  "parent": "File", "parenttype": "DocType", "parentfield": "permissions",
+  "role": "ESS User", "permlevel": 0,
+  "read": 1, "write": 1, "create": 1, "delete": 0,
+  "report": 0, "export": 0, "share": 0, "print": 0, "email": 0,
+  "if_owner": 1,
+  "name": "ESS User-File-perm"
+ },
+ {
+  "doctype": "Custom DocPerm",
+  "parent": "File", "parenttype": "DocType", "parentfield": "permissions",
+  "role": "ESS Manager", "permlevel": 0,
+  "read": 1, "write": 1, "create": 1, "delete": 0,
+  "report": 0, "export": 0, "share": 0, "print": 0, "email": 0,
+  "if_owner": 1,
+  "name": "ESS Manager-File-perm"
+ },
+
+ {
+  "doctype": "Custom DocPerm",
+  "parent": "Comment", "parenttype": "DocType", "parentfield": "permissions",
+  "role": "ESS User", "permlevel": 0,
+  "read": 1, "write": 0, "create": 1, "delete": 0,
+  "report": 0, "export": 0, "share": 0, "print": 0, "email": 0,
+  "name": "ESS User-Comment-perm"
+ },
+ {
+  "doctype": "Custom DocPerm",
+  "parent": "Comment", "parenttype": "DocType", "parentfield": "permissions",
+  "role": "ESS Manager", "permlevel": 0,
+  "read": 1, "write": 0, "create": 1, "delete": 0,
+  "report": 0, "export": 0, "share": 0, "print": 0, "email": 0,
+  "name": "ESS Manager-Comment-perm"
+ }
+]
