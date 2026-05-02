@@ -243,25 +243,10 @@ function SiteAttendanceScreen({ geofenceMode, offlineQueue, setOfflineQueue, isO
         </div>
       )}
 
-      {/* GPS / geofence card */}
-      <div className="card card-flush">
-        <div style={{ padding: 14, display: 'flex', alignItems: 'center', gap: 10 }}>
-          <Icon name="pin" size={18} style={{ color: match.inside ? 'var(--ok)' : 'var(--warn)' }} />
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 13, fontWeight: 600 }} className="truncate">
-              {match.inside ? match.site.project_name : t.no_site_matched}
-            </div>
-            <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-              {match.inside ? `${match.site.client} · ${match.distance}${t.from_center}` :
-                `${t.distance_to_nearest}: ${match.site?.project_name || ''} · ${match.distance}${t.meters_away}`}
-            </div>
-          </div>
-          <span className={`chip chip-dot ${match.inside ? 'chip-ok' : 'chip-warn'}`}>
-            {match.inside ? t.inside_zone : t.outside_zone}
-          </span>
-        </div>
-        <MiniMap sites={sites} myPos={myPos} match={match} />
-      </div>
+      {/* Site hero — navy block mirroring the office-hero language.
+          Combines status pill + project label + embedded dark-tinted
+          map + 3-up stats footer (distance / accuracy / sites in radius). */}
+      <SiteHero sites={sites} myPos={myPos} match={match} />
 
       {/* Big check-in/out button */}
       <div style={{ marginTop: 14 }}>
@@ -1065,6 +1050,99 @@ function CheckoutModal({ project, activityTypes, sites, onCancel, onConfirm, loa
 // Real OSM tiles via Leaflet (see LeafletMap in ui.jsx). The previous
 // hand-drawn SVG schematic is gone — it looked decorative but didn't show
 // real geography, which surprised users who didn't know which way was north.
+// ─── Site hero ─────────────────────────────────────────────────────────
+// Navy block that mirrors the office-hero visual language for site
+// (engineer) attendance.  Composition top → bottom:
+//   1. Header: status pill (INSIDE/OUTSIDE PROJECT ZONE) + project name + sub
+//   2. Embedded dark-tinted Leaflet map (real OSM tiles, CSS-filtered)
+//   3. Glass chips overlaid on the map: distance + Live legend
+//   4. 3-up stats footer: From-center · Accuracy · Sites in view
+//   5. Hi-vis bottom stripe (green-y when inside, warn-y when outside)
+function SiteHero({ sites, myPos, match }) {
+  const t = useT();
+  const inside = !!match.inside;
+  const distLabel = match.distance >= 1000 ? `${(match.distance / 1000).toFixed(1)}` : `${match.distance}`;
+  const distUnit  = match.distance >= 1000 ? 'km' : 'm';
+  const acc = (myPos && myPos.accuracy) || 8;
+  const center = inside && match.site
+    ? { lat: match.site.lat ?? match.site.site_latitude, lng: match.site.lng ?? match.site.site_longitude }
+    : (myPos && myPos.lat != null ? { lat: myPos.lat, lng: myPos.lng } : null);
+
+  return (
+    <div className={`site-hero ${inside ? 'is-inside' : 'is-outside'}`}>
+      <div className="site-hero-head">
+        <div className="site-hero-head-body">
+          <span className="site-hero-status">
+            <span className="site-hero-status-dot" />
+            {inside ? t.inside_zone : t.outside_zone}
+          </span>
+          <div className="site-hero-project truncate">
+            {inside
+              ? match.site.project_name
+              : (match.site?.project_name || t.no_site_matched)}
+          </div>
+          <div className="site-hero-sub">
+            <Icon name="pin" size={12} />
+            {inside
+              ? <><b>{match.site.client || match.site.name}</b> · {match.distance}{t.from_center}</>
+              : <>{t.distance_to_nearest} · <b>{match.distance}{t.meters_away}</b></>}
+          </div>
+        </div>
+      </div>
+
+      <div className="site-hero-map">
+        <LeafletMap
+          sites={sites}
+          userPos={myPos && myPos.lat != null ? myPos : null}
+          userLabel={t.location}
+          center={center}
+          zoom={15}
+          height={200}
+          interactive={false}
+          highlight={match.inside ? match.site?.name : (match.site?.name || null)}
+        />
+        <div className="site-hero-map-chip">
+          <Icon name="pin" size={11} />
+          <span><b>{match.distance}</b>{distUnit === 'km' ? ' km' : 'm'}</span>
+        </div>
+        <div className="site-hero-map-legend">
+          <span className="pill-dot" />
+          {t.live}
+        </div>
+      </div>
+
+      <div className="site-hero-stats">
+        <div className="site-hero-stat">
+          <div className="site-hero-stat-label">{inside ? 'From center' : 'Distance'}</div>
+          <div className="site-hero-stat-value">
+            {distLabel}<span className="unit">{distUnit}</span>
+          </div>
+          <div className="site-hero-stat-sub">
+            <Icon name="pin" size={11} />
+            {match.site?.name || '—'}
+          </div>
+        </div>
+        <div className="site-hero-divider" />
+        <div className="site-hero-stat">
+          <div className="site-hero-stat-label">Accuracy</div>
+          <div className="site-hero-stat-value">±{acc}<span className="unit">m</span></div>
+          <div className="site-hero-stat-sub">
+            <span className="live-dot" /> GPS live
+          </div>
+        </div>
+        <div className="site-hero-divider" />
+        <div className="site-hero-stat">
+          <div className="site-hero-stat-label">Sites</div>
+          <div className="site-hero-stat-value">{sites.length}</div>
+          <div className="site-hero-stat-sub">in radius</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Legacy MiniMap (unused after the SiteHero rewrite, kept here for any
+// other consumer that still references it) ────────────────────────────
 function MiniMap({ sites, myPos, match }) {
   const t = useT();
   // Centre the map on the matched site if we're inside one, else on the
