@@ -29,7 +29,7 @@
 <link rel="preconnect" href="https://c.tile.openstreetmap.org" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="anonymous" />
-<link rel="stylesheet" href="/assets/akg_ess/styles.css?v=43" />
+<link rel="stylesheet" href="/assets/akg_ess/styles.css?v=44" />
 </head>
 <body>
 <div id="root"></div>
@@ -39,15 +39,15 @@
 <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin="anonymous"></script>
 
-<script src="/assets/akg_ess/data.js?v=43"></script>
-<script src="/assets/akg_ess/api.js?v=43"></script>
-<script type="text/babel" src="/assets/akg_ess/ui.jsx?v=43"></script>
-<script type="text/babel" src="/assets/akg_ess/attendance.jsx?v=43"></script>
-<script type="text/babel" src="/assets/akg_ess/monthly-report.jsx?v=43"></script>
-<script type="text/babel" src="/assets/akg_ess/leaves.jsx?v=43"></script>
-<script type="text/babel" src="/assets/akg_ess/petty.jsx?v=43"></script>
-<script type="text/babel" src="/assets/akg_ess/profile.jsx?v=43"></script>
-<script type="text/babel" src="/assets/akg_ess/notifications.jsx?v=43"></script>
+<script src="/assets/akg_ess/data.js?v=44"></script>
+<script src="/assets/akg_ess/api.js?v=44"></script>
+<script type="text/babel" src="/assets/akg_ess/ui.jsx?v=44"></script>
+<script type="text/babel" src="/assets/akg_ess/attendance.jsx?v=44"></script>
+<script type="text/babel" src="/assets/akg_ess/monthly-report.jsx?v=44"></script>
+<script type="text/babel" src="/assets/akg_ess/leaves.jsx?v=44"></script>
+<script type="text/babel" src="/assets/akg_ess/petty.jsx?v=44"></script>
+<script type="text/babel" src="/assets/akg_ess/profile.jsx?v=44"></script>
+<script type="text/babel" src="/assets/akg_ess/notifications.jsx?v=44"></script>
 
 <script type="text/babel">
 // Production runtime defaults (tweaks panel removed). Persisted client-side
@@ -58,36 +58,64 @@ const RUNTIME_DEFAULTS = {
 };
 
 // ─── Generic offline-queue sync ──────────────────────────────────────
-// Each queued item has _kind: 'checkin' | 'leave' | 'claim' | 'topup'
+// Each queued item has _kind: 'checkin' | 'leave' | 'claim' | 'topup'.
+// Items that succeed are removed from the queue.  Items that fail with a
+// network error stay in the queue (we'll retry next time we reconnect).
+// Items that fail with a server error (validation / permission / etc.)
+// are dropped — keeping them would mean retrying forever against a doc
+// the server will always reject.
 async function syncOfflineQueue(queue, setQueue, setIsOffline) {
   if (!queue.length) return 0;
   if (setIsOffline) setIsOffline(false);
+  const remaining = [];
+  let synced = 0;
   for (const item of queue) {
     try {
-      if (item._kind === 'checkin' || !item._kind) {
-        await window.frappe.createCheckin(item);
-      } else if (item._kind === 'leave') {
+      if (item._kind === 'leave') {
         await window.frappe.submitLeave(item);
+        synced++;
         await window.frappe.pushNotification({
           kind: 'sync', title_key: 'item_synced',
           body: `Leave application synced: ${item.leave_type} ${item.from_date} → ${item.to_date}`,
           target: { tab: 'leaves' },
-        });
+        }).catch(() => {});
       } else if (item._kind === 'claim') {
         await window.frappe.submitClaim(item);
+        synced++;
         const total = (item.expenses || []).reduce((s, e) => s + (parseFloat(e.amount) || 0), 0);
         await window.frappe.pushNotification({
           kind: 'sync', title_key: 'item_synced',
           body: `Expense claim synced · AED ${total.toFixed(2)}`,
           target: { tab: 'petty' },
-        });
+        }).catch(() => {});
+      } else if (item._kind === 'topup') {
+        await window.frappe.requestTopup(item.amount, item.reason);
+        synced++;
+        await window.frappe.pushNotification({
+          kind: 'sync', title_key: 'item_synced',
+          body: `Top-up request synced · AED ${parseFloat(item.amount).toFixed(2)}`,
+          target: { tab: 'petty' },
+        }).catch(() => {});
+      } else /* checkin */ {
+        await window.frappe.createCheckin(item);
+        synced++;
       }
-    } catch (e) { /* swallow — keep going */ }
+    } catch (e) {
+      if (window.frappe.isNetworkError && window.frappe.isNetworkError(e)) {
+        // Still no signal — keep the item in the queue for next attempt.
+        remaining.push(item);
+      } else {
+        // Server-side rejection (duplicate, validation, permission, …).
+        // Don't loop forever — drop the item and log it.  In practice the
+        // user's server-side guard for office workers will reject a 2nd
+        // IN/OUT on the same day, which lands here.
+        try { console.warn('AKG ESS: queued item rejected by server, dropping', item, e); } catch (x) {}
+      }
+    }
   }
-  const n = queue.length;
-  setQueue([]);
+  setQueue(remaining);
   window.dispatchEvent(new Event('akg:notifs-changed'));
-  return n;
+  return synced;
 }
 
 function App() {
@@ -99,10 +127,48 @@ function App() {
 
   const [tab, setTab] = React.useState('attendance');
   const [subView, setSubView] = React.useState(null);
-  const [offlineQueue, setOfflineQueue] = React.useState([]);
-  const [isOffline, setIsOffline] = React.useState(false);
+  // Outbox is restored from localStorage so queued items survive an app
+  // close / reload / PWA reinstall.  Initial offline state mirrors what
+  // the browser already knows from navigator.onLine.
+  const [offlineQueue, setOfflineQueue] = React.useState(() => {
+    try { return JSON.parse(localStorage.getItem('akg.outbox') || '[]'); }
+    catch (e) { return []; }
+  });
+  const [isOffline, setIsOffline] = React.useState(() => !navigator.onLine);
   const [loggedIn, setLoggedIn] = React.useState(false);
   const [notifsOpen, setNotifsOpen] = React.useState(false);
+
+  // Persist the outbox to localStorage on every change so queued items
+  // can't be lost.
+  React.useEffect(() => {
+    try { localStorage.setItem('akg.outbox', JSON.stringify(offlineQueue)); }
+    catch (e) {}
+  }, [offlineQueue]);
+
+  // Auto-detect network state: when the browser fires 'online' we flip
+  // the flag and drain any queued items.  When it fires 'offline' we
+  // flip the flag so subsequent submits route to the queue.
+  React.useEffect(() => {
+    const goOnline = () => {
+      setIsOffline(false);
+      // Drain immediately on reconnect.  Use a function form of
+      // setOfflineQueue to read the latest queue, since this listener
+      // captures the closure.
+      setOfflineQueue((q) => {
+        if (q.length) {
+          syncOfflineQueue(q, setOfflineQueue, setIsOffline).catch(() => {});
+        }
+        return q;
+      });
+    };
+    const goOffline = () => setIsOffline(true);
+    window.addEventListener('online', goOnline);
+    window.addEventListener('offline', goOffline);
+    return () => {
+      window.removeEventListener('online', goOnline);
+      window.removeEventListener('offline', goOffline);
+    };
+  }, []);
 
   // Hydrate session on first mount — try to fetch the current user.
   // If 403/401 the login screen is rendered.

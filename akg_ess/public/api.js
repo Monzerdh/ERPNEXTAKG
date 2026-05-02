@@ -732,7 +732,62 @@
       window.EXPENSE_CLAIM_TYPES = claimTypes;
       window.LEAVE_BALANCES = leaveBalances;
       window.ACTIVITY_TYPES = activityTypes;
+      // Pre-warm OSM tiles around each assigned site so the map renders
+      // correctly on the user's first visit to a no-signal location.
+      // Fire-and-forget — the SW caches each tile via its existing OSM
+      // cache-first strategy.
+      try { window.frappe.prewarmSiteTiles(sites); } catch (e) {}
       return { sites, claimTypes, leaveBalances, activityTypes };
+    },
+
+    // ─── Offline helpers ─────────────────────────────────────────────
+    // Tell a network-layer error (no signal / DNS / CORS) apart from a
+    // server-layer error (HTTP 4xx/5xx with a response body).  Auto-queue
+    // logic uses this to decide whether to drop the action into the
+    // outbox vs. surface a real error to the user.
+    isNetworkError(err) {
+      if (!err) return false;
+      if (typeof err.status === 'number') return err.status === 0;
+      if (err.name === 'TypeError') return true;        // browser fetch() rejects with TypeError
+      if (err.name === 'NetworkError') return true;
+      if (typeof err.message === 'string') {
+        return /failed to fetch|network|load failed|offline|no internet/i.test(err.message);
+      }
+      return false;
+    },
+
+    // Pre-fetch OSM tiles around each project geofence so the embedded
+    // map in SiteHero works on first visit even if the user has no
+    // signal there yet.  Strategy: 5x5 tile grid at zoom 14/15/16 around
+    // each site (~75 tiles per site, ~1MB).  The browser SW caches each
+    // response automatically (see sw.js OSM tile cache-first rule).
+    prewarmSiteTiles(sites) {
+      if (!Array.isArray(sites) || !sites.length) return;
+      const lat2tile = (lat, z) => Math.floor(
+        (1 - Math.log(Math.tan(lat * Math.PI / 180) + 1 / Math.cos(lat * Math.PI / 180)) / Math.PI) / 2 * Math.pow(2, z)
+      );
+      const lon2tile = (lon, z) => Math.floor((lon + 180) / 360 * Math.pow(2, z));
+      const subdomains = ['a', 'b', 'c'];
+      let i = 0;
+      for (const s of sites) {
+        const lat = s.lat ?? s.site_latitude;
+        const lng = s.lng ?? s.site_longitude;
+        if (lat == null || lng == null) continue;
+        for (const z of [14, 15, 16]) {
+          const cx = lon2tile(lng, z);
+          const cy = lat2tile(lat, z);
+          for (let dx = -2; dx <= 2; dx++) {
+            for (let dy = -2; dy <= 2; dy++) {
+              const sub = subdomains[(i++) % 3];
+              const url = `https://${sub}.tile.openstreetmap.org/${z}/${cx + dx}/${cy + dy}.png`;
+              // Stagger fetches slightly to avoid hammering the OSM rate-limit.
+              setTimeout(() => {
+                fetch(url, { mode: 'cors', credentials: 'omit' }).catch(() => {});
+              }, Math.min(15000, i * 8));
+            }
+          }
+        }
+      }
     },
   };
 

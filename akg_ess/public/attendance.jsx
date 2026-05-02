@@ -83,7 +83,7 @@ function SiteAttendanceScreen({ geofenceMode, offlineQueue, setOfflineQueue, isO
       project: match.site.name, accuracy: myPos.accuracy,
     };
     if (isOffline) {
-      setOfflineQueue((q) => [...q, { ...payload, queued_at: new Date().toISOString() }]);
+      setOfflineQueue((q) => [...q, { ...payload, _kind: 'checkin', queued_at: new Date().toISOString() }]);
       toast(`${t.check_in} — ${t.queued}`, 'warn');
       setActing(false);
       return;
@@ -93,7 +93,14 @@ function SiteAttendanceScreen({ geofenceMode, offlineQueue, setOfflineQueue, isO
       setCheckins((c) => [row, ...c]);
       toast(`${t.check_in} ✓ ${match.site.project_name}`, 'ok');
     } catch (e) {
-      toast(e.message || 'Failed', 'bad');
+      // Auto-queue on network error so we never lose a tap to bad signal.
+      if (window.frappe.isNetworkError && window.frappe.isNetworkError(e)) {
+        setOfflineQueue((q) => [...q, { ...payload, _kind: 'checkin', queued_at: new Date().toISOString() }]);
+        setIsOffline(true);
+        toast(`${t.check_in} — saved, will sync when online`, 'warn');
+      } else {
+        toast(e.message || 'Failed', 'bad');
+      }
     } finally {
       setActing(false);
     }
@@ -113,7 +120,7 @@ function SiteAttendanceScreen({ geofenceMode, offlineQueue, setOfflineQueue, isO
       activity_type, task,
     };
     if (isOffline) {
-      setOfflineQueue((q) => [...q, { ...payload, queued_at: new Date().toISOString() }]);
+      setOfflineQueue((q) => [...q, { ...payload, _kind: 'checkin', queued_at: new Date().toISOString() }]);
       toast(`${t.check_out} — ${t.queued}`, 'warn');
       setCheckoutModal(null);
       setActing(false);
@@ -139,7 +146,14 @@ function SiteAttendanceScreen({ geofenceMode, offlineQueue, setOfflineQueue, isO
       }
       toast(`${t.check_out} ✓`, 'ok');
     } catch (e) {
-      toast(e.message || 'Failed', 'bad');
+      if (window.frappe.isNetworkError && window.frappe.isNetworkError(e)) {
+        setOfflineQueue((q) => [...q, { ...payload, _kind: 'checkin', queued_at: new Date().toISOString() }]);
+        setIsOffline(true);
+        toast(`${t.check_out} — saved, will sync when online`, 'warn');
+        setCheckoutModal(null);
+      } else {
+        toast(e.message || 'Failed', 'bad');
+      }
     } finally {
       setActing(false);
     }
@@ -417,7 +431,7 @@ function OfficeAttendanceScreen({ offlineQueue, setOfflineQueue, isOffline, setI
       latitude: null, longitude: null, project: null, accuracy: null,
     };
     if (isOffline) {
-      setOfflineQueue((q) => [...q, { ...payload, queued_at: new Date().toISOString() }]);
+      setOfflineQueue((q) => [...q, { ...payload, _kind: 'checkin', queued_at: new Date().toISOString() }]);
       toast(`${logType === 'OUT' ? t.check_out : t.check_in} — ${t.queued}`, 'warn');
       setActing(false);
       setConfirmOut(false);
@@ -428,7 +442,14 @@ function OfficeAttendanceScreen({ offlineQueue, setOfflineQueue, isOffline, setI
       setCheckins((c) => [row, ...c]);
       toast(`${logType === 'OUT' ? t.check_out : t.check_in} ✓`, 'ok');
     } catch (e) {
-      toast(e.message || 'Failed', 'bad');
+      // Auto-queue on real network failure (no signal in basement, etc).
+      if (window.frappe.isNetworkError && window.frappe.isNetworkError(e)) {
+        setOfflineQueue((q) => [...q, { ...payload, _kind: 'checkin', queued_at: new Date().toISOString() }]);
+        setIsOffline(true);
+        toast(`${logType === 'OUT' ? t.check_out : t.check_in} — saved, will sync when online`, 'warn');
+      } else {
+        toast(e.message || 'Failed', 'bad');
+      }
     } finally {
       setActing(false);
       setConfirmOut(false);

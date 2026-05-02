@@ -122,6 +122,7 @@ function PettyScreen({ role, geofenceMode, isOffline = false, offlineQueue = [],
         onSubmit={(row) => { setMine((m) => [row, ...m]); load(); toast(`Expense claim ${t.submitted.toLowerCase()}`, 'ok'); }} />
 
       <TopupSheet open={showTopup} onClose={() => setShowTopup(false)}
+        isOffline={isOffline} setOfflineQueue={setOfflineQueue}
         onSubmit={() => { load(); toast(`${t.request_topup} ✓`, 'ok'); }} />
 
       <ReviewClaimSheet item={reviewing} onClose={() => setReviewing(null)} onAct={(action, comment) => {
@@ -282,7 +283,13 @@ function NewClaimSheet({ open, onClose, geofenceMode, onSubmit, isOffline, setOf
       onSubmit(row);
       onClose();
     } catch (e) {
-      toast(e.message || 'Failed to submit claim', 'bad');
+      if (window.frappe.isNetworkError && window.frappe.isNetworkError(e) && setOfflineQueue) {
+        setOfflineQueue((q) => [...q, { ...payload, _kind: 'claim', _localId: `EC-OFFLINE-${Date.now()}`, queued_at: new Date().toISOString() }]);
+        toast(`${t.new_claim} — saved, will sync when online`, 'warn');
+        onClose();
+      } else {
+        toast(e.message || 'Failed to submit claim', 'bad');
+      }
     } finally {
       setBusy(false);
     }
@@ -574,7 +581,7 @@ function ExpenseLineView({ e }) {
 }
 
 // ─── Top-up ──────────────────────────────────────────────────────────────
-function TopupSheet({ open, onClose, onSubmit }) {
+function TopupSheet({ open, onClose, onSubmit, isOffline, setOfflineQueue }) {
   const t = useT();
   const toast = useToast();
   const [amount, setAmount] = React.useState('');
@@ -584,12 +591,28 @@ function TopupSheet({ open, onClose, onSubmit }) {
   const submit = async () => {
     if (!amount || parseFloat(amount) <= 0) return;
     setBusy(true);
+    const payload = { amount: parseFloat(amount), reason };
+    if (isOffline && setOfflineQueue) {
+      setOfflineQueue((q) => [...q, { ...payload, _kind: 'topup', _localId: `TU-OFFLINE-${Date.now()}`, queued_at: new Date().toISOString() }]);
+      toast(`${t.request_topup} — ${t.queued}`, 'warn');
+      setBusy(false);
+      onSubmit();
+      onClose();
+      return;
+    }
     try {
       await window.frappe.requestTopup(parseFloat(amount), reason);
       onSubmit();
       onClose();
     } catch (e) {
-      toast(e.message || 'Failed to submit top-up request', 'bad');
+      if (window.frappe.isNetworkError && window.frappe.isNetworkError(e) && setOfflineQueue) {
+        setOfflineQueue((q) => [...q, { ...payload, _kind: 'topup', _localId: `TU-OFFLINE-${Date.now()}`, queued_at: new Date().toISOString() }]);
+        toast(`${t.request_topup} — saved, will sync when online`, 'warn');
+        onSubmit();
+        onClose();
+      } else {
+        toast(e.message || 'Failed to submit top-up request', 'bad');
+      }
     } finally {
       setBusy(false);
     }

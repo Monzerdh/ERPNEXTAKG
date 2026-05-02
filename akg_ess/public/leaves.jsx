@@ -248,7 +248,15 @@ function NewLeaveSheet({ open, onClose, balances, onSubmit, isOffline, setOfflin
       onSubmit(r);
       onClose();
     } catch (e) {
-      toast(e.message || 'Failed to submit leave request', 'bad');
+      // Network died mid-submit — drop into the outbox so the request
+      // syncs when the user reconnects.
+      if (window.frappe.isNetworkError && window.frappe.isNetworkError(e) && setOfflineQueue) {
+        setOfflineQueue((q) => [...q, { ...payload, _kind: 'leave', _localId: `LV-OFFLINE-${Date.now()}`, queued_at: new Date().toISOString() }]);
+        toast(`${t.new_request} — saved, will sync when online`, 'warn');
+        onClose();
+      } else {
+        toast(e.message || 'Failed to submit leave request', 'bad');
+      }
     } finally {
       setBusy(false);
     }
