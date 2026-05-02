@@ -1279,13 +1279,14 @@ input, textarea, select { font-family: inherit; font-size: inherit; }
 }
 .site-hero-sub b { color: rgba(255,255,255,.85); font-weight: 600; }
 
-/* Map area — wraps our real Leaflet map.  Tiles get dark-mode filtered
-   so the OSM rendering blends with the navy hero instead of looking
-   like a bright cutout. */
+/* Map area — wraps our real Leaflet map. Tiles render in their natural
+   light palette so street labels (especially Arabic) stay readable.
+   Soft top + bottom gradient overlays integrate the bright cutout with
+   the navy hero. */
 .site-hero-map {
   position: relative;
   height: 200px;
-  background: linear-gradient(180deg, #0E1B2E 0%, #0A1322 100%);
+  background: #E8EEF3;
   border-top: 1px solid rgba(255,255,255,.08);
   border-bottom: 1px solid rgba(255,255,255,.06);
   overflow: hidden;
@@ -1295,17 +1296,30 @@ input, textarea, select { font-family: inherit; font-size: inherit; }
   border-radius: 0;
   border: 0;
 }
-/* Dark-mode filter on the OSM tile pane only — not the markers/popups.
-   invert + hue-rotate is the canonical Leaflet dark-OSM trick. */
-.site-hero-map .leaflet-tile-pane {
-  filter: invert(1) hue-rotate(180deg) saturate(0.55) brightness(0.85) contrast(0.95);
+/* Edge fades — top blends into hero head, bottom blends into stats row. */
+.site-hero-map::before,
+.site-hero-map::after {
+  content: "";
+  position: absolute;
+  left: 0; right: 0;
+  pointer-events: none;
+  z-index: 400;
+}
+.site-hero-map::before {
+  top: 0; height: 32px;
+  background: linear-gradient(180deg, rgba(15,30,51,.55) 0%, rgba(15,30,51,0) 100%);
+}
+.site-hero-map::after {
+  bottom: 0; height: 40px;
+  background: linear-gradient(0deg, rgba(15,30,51,.6) 0%, rgba(15,30,51,0) 100%);
 }
 .site-hero-map .leaflet-control-attribution {
-  background: rgba(15,23,42,.55) !important;
-  color: rgba(255,255,255,.6) !important;
+  background: rgba(255,255,255,.78) !important;
+  color: rgba(15,30,51,.65) !important;
   border-radius: 4px 0 0 0;
+  z-index: 450;
 }
-.site-hero-map .leaflet-control-attribution a { color: rgba(255,255,255,.85) !important; }
+.site-hero-map .leaflet-control-attribution a { color: rgba(15,30,51,.85) !important; }
 
 /* Glass chips on the map */
 .site-hero-map-legend {
