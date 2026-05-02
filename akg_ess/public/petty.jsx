@@ -433,6 +433,42 @@ function ExpenseLineCard({ r, onChange, onRemove }) {
       </div>
 
       <div style={{ padding: 14 }}>
+        {/* Project — first decision the engineer makes. Mandatory; gets a
+            tinted card so it stands out from the rest of the form. */}
+        <div
+          className="field"
+          style={{
+            background: r.project ? 'var(--ok-100)' : 'var(--warn-100)',
+            border: `1px solid ${r.project ? 'var(--ok)' : 'var(--warn)'}`,
+            borderRadius: 'var(--radius)',
+            padding: 12,
+            marginBottom: 14,
+            transition: 'background .15s, border-color .15s',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+            <Icon name="pin" size={16} style={{ color: r.project ? 'var(--ok)' : 'var(--warn)' }} />
+            <label className="field-label" style={{ margin: 0, color: r.project ? 'var(--ok)' : 'var(--warn)', fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', fontSize: 11 }}>
+              {t.project} <span style={{ color: 'var(--bad)' }}>*</span>
+            </label>
+            {!r.project && (
+              <span className="chip chip-warn" style={{ marginInlineStart: 'auto', fontSize: 9.5, fontWeight: 700 }}>{t.required}</span>
+            )}
+          </div>
+          <select className="field-input" value={r.project || ''} onChange={(e) => onChange({ project: e.target.value })} disabled={r.scanning} style={{ background: 'white' }}>
+            <option value="">{t.select_project_ph}</option>
+            {sites.map((s) => <option key={s.name} value={s.name}>{s.project_name || s.name}</option>)}
+            <option disabled>──────────</option>
+            <option value="__other__">{t.project_other}</option>
+          </select>
+          {r.project === '__other__' && (
+            <div style={{ fontSize: 11, color: 'var(--text)', marginTop: 6, lineHeight: 1.4 }}>
+              <Icon name="info" size={11} style={{ marginInlineEnd: 4, verticalAlign: '-1px' }} />
+              {t.project_other_hint}
+            </div>
+          )}
+        </div>
+
         {/* Expense Claim Type */}
         <div className="field">
           <label className="field-label">{t.expense_type} *</label>
@@ -480,24 +516,6 @@ function ExpenseLineCard({ r, onChange, onRemove }) {
           )}
           {r.is_tax_invoice && r.trn && r.trn.length < 15 && (
             <div style={{ fontSize: 11, color: 'var(--bad)', marginTop: 4 }}>{t.trn_length_hint}</div>
-          )}
-        </div>
-
-        {/* Project (engineer selects — info isn't on the bill).  "Other"
-            (parking, courier, fuel between sites) is sent as null on the
-            Expense Claim's project field. */}
-        <div className="field">
-          <label className="field-label">{t.project} *</label>
-          <select className="field-input" value={r.project || ''} onChange={(e) => onChange({ project: e.target.value })} disabled={r.scanning}>
-            <option value="">{t.select_project_ph}</option>
-            {sites.map((s) => <option key={s.name} value={s.name}>{s.project_name || s.name}</option>)}
-            <option disabled>──────────</option>
-            <option value="__other__">{t.project_other}</option>
-          </select>
-          {r.project === '__other__' && (
-            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4, lineHeight: 1.4 }}>
-              {t.project_other_hint}
-            </div>
           )}
         </div>
 
