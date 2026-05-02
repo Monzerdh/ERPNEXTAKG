@@ -229,12 +229,30 @@ function NewClaimSheet({ open, onClose, geofenceMode, onSubmit, isOffline, setOf
       };
       setExpenses((r) => [...r, newE]);
       window.frappe.extractReceipt(dataUrl).then((extracted) => {
+        // Snap the model's expense_type to one that actually exists in
+        // this ERPNext site. The server already does this, but if a stale
+        // response slips through we still want a real, selectable type so
+        // the engineer just rectifies if it's wrong instead of starting
+        // from "Other".
+        const claimTypes = window.EXPENSE_CLAIM_TYPES || [];
+        const guess = String(extracted.expense_type || extracted.category || '').trim();
+        let resolved = '';
+        if (claimTypes.length) {
+          const exact = claimTypes.find((c) => c.name.toLowerCase() === guess.toLowerCase());
+          const fuzzy = exact || claimTypes.find((c) => {
+            const n = c.name.toLowerCase();
+            return guess && (n.includes(guess.toLowerCase()) || guess.toLowerCase().includes(n));
+          });
+          resolved = (fuzzy && fuzzy.name) || claimTypes[0].name;
+        } else {
+          resolved = guess || 'Other';
+        }
         setExpenses((r) => r.map((x) => x.id === id ? {
           ...x,
           vendor: extracted.vendor || x.vendor,
           amount: extracted.amount || 0,
           expense_date: extracted.date || x.expense_date,
-          expense_type: extracted.expense_type || extracted.category || 'Other',
+          expense_type: resolved,
           description: extracted.description || extracted.vendor || '',
           vat_included: typeof extracted.vat_included === 'boolean' ? extracted.vat_included : true,
           is_tax_invoice: !!extracted.is_tax_invoice,

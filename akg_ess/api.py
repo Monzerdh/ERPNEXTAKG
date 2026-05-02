@@ -5,28 +5,76 @@ import frappe
 
 OCR_CACHE_KEY = "akg_ess:ocr_calls"
 
-OCR_PROMPT = """You are an OCR assistant for a UAE petty-cash app aligned to ERPNext Expense Claim. The user uploaded a receipt or invoice image. Extract these fields and return ONLY JSON:
-{
+
+def _get_expense_claim_types():
+    """Return the live list of Expense Claim Type names from this ERPNext
+    site, sorted alphabetically. Bypasses permissions because the
+    Projects/HR roles aren't always granted to ESS users."""
+    try:
+        rows = frappe.get_all(
+            "Expense Claim Type",
+            fields=["name"],
+            order_by="name asc",
+            limit_page_length=0,
+            ignore_permissions=True,
+        )
+        return [r["name"] for r in rows if r.get("name")]
+    except Exception:
+        return []
+
+
+def _normalize_expense_type(raw, allowed):
+    """Snap whatever the model returned to one of the allowed types.
+
+    Order of preference:
+      1. exact match (case-insensitive)
+      2. substring match either way (case-insensitive) — e.g. 'Fuel' ⇄ 'Fuel & Petrol'
+      3. first allowed entry (engineer can rectify in the UI)
+    """
+    if not allowed:
+        return raw or ""
+    if not raw:
+        return allowed[0]
+    raw_l = str(raw).strip().lower()
+    by_l = {a.lower(): a for a in allowed}
+    if raw_l in by_l:
+        return by_l[raw_l]
+    for a_l, a in by_l.items():
+        if raw_l in a_l or a_l in raw_l:
+            return a
+    return allowed[0]
+
+
+def _build_ocr_prompt(allowed):
+    """Inject the real Expense Claim Type list into the prompt so the
+    model can't hallucinate a category that doesn't exist on this site."""
+    types_clause = (
+        ", ".join(f'"{a}"' for a in allowed) if allowed else
+        '"Fuel", "Materials", "Food", "Travel", "Accommodation", "Telephone", "Other"'
+    )
+    fallback = allowed[0] if allowed else "Other"
+    return f"""You are an OCR assistant for a UAE petty-cash app aligned to ERPNext Expense Claim. The user uploaded a receipt or invoice image. Extract these fields and return ONLY JSON:
+{{
   "vendor": "supplier/vendor name (string)",
   "amount": "total amount in AED (number)",
   "date": "YYYY-MM-DD",
-  "expense_type": "one of: Fuel, Materials, Food, Travel, Accommodation, Telephone, Other",
+  "expense_type": "MUST be exactly one of: {types_clause}. Pick the closest match. If none fits, pick {fallback!r}.",
   "description": "short ≤60 chars",
   "vat_included": "true if VAT/TRN is shown",
   "is_tax_invoice": "true if document is titled 'Tax Invoice' or shows VAT registration / TRN",
   "trn": "15-digit Tax Registration Number if visible, else empty string",
   "invoice_number": "invoice/receipt number if visible, else empty string",
   "vat_amount": "VAT amount as a separate number if printed, else 0"
-}
-If you can't see the image return all-empty/zero values with expense_type='Other'."""
+}}
+If you can't see the image return all-empty/zero values with expense_type={fallback!r}."""
 
 
-def _empty_payload():
+def _empty_payload(allowed=None):
     return {
         "vendor": "",
         "amount": 0,
         "date": frappe.utils.nowdate(),
-        "expense_type": "Other",
+        "expense_type": (allowed[0] if allowed else "Other"),
         "description": "",
         "vat_included": False,
         "is_tax_invoice": False,
@@ -223,9 +271,16 @@ def extract_receipt(data_url):
 
     Returns the extracted JSON payload, or a safe empty default if the
     feature is disabled / the key is missing / the call fails.
+
+    The Expense Claim Type list is fetched live from this site and
+    injected into the prompt, so the model can only return categories
+    that actually exist. If it slips, we snap server-side to the nearest
+    real type — engineers can rectify in the UI.
     """
+    allowed = _get_expense_claim_types()
+
     if not data_url or "," not in data_url:
-        return _empty_payload()
+        return _empty_payload(allowed)
 
     # Lazy import — keeps api.py loadable even if the settings DocType isn't
     # registered yet during install/migrate.
@@ -233,17 +288,17 @@ def extract_receipt(data_url):
 
     settings = get_settings()
     if not settings["enable_receipt_ocr"]:
-        return _empty_payload()
+        return _empty_payload(allowed)
 
     api_key = settings["anthropic_api_key"]
     if not api_key:
-        return _empty_payload()
+        return _empty_payload(allowed)
 
     cap = settings["monthly_call_cap"]
     if cap:
         count = _ocr_increment_and_check(cap)
         if count and count > cap:
-            return _empty_payload()
+            return _empty_payload(allowed)
 
     header, b64 = data_url.split(",", 1)
     media_type = "image/jpeg"
@@ -257,7 +312,9 @@ def extract_receipt(data_url):
             f"Anthropic vision rejects media_type={media_type}. Convert to jpg/png before upload.",
             "AKG ESS · OCR media",
         )
-        return _empty_payload()
+        return _empty_payload(allowed)
+
+    prompt = _build_ocr_prompt(allowed)
 
     # Use the HTTP API directly via requests (a Frappe runtime dep — no
     # extra `bench pip install anthropic` step needed on Frappe Cloud).
@@ -277,7 +334,7 @@ def extract_receipt(data_url):
                     {
                         "role": "user",
                         "content": [
-                            {"type": "text", "text": OCR_PROMPT},
+                            {"type": "text", "text": prompt},
                             {"type": "image", "source": {"type": "base64", "media_type": media_type, "data": b64}},
                         ],
                     }
@@ -290,7 +347,7 @@ def extract_receipt(data_url):
             f"Anthropic request failed at network layer: {e!r}",
             "AKG ESS · OCR network",
         )
-        return _empty_payload()
+        return _empty_payload(allowed)
 
     if resp.status_code != 200:
         # Most common causes: 401 (bad key), 404 (bad model name), 400
@@ -302,7 +359,7 @@ def extract_receipt(data_url):
             f"Response body:\n{snippet}",
             "AKG ESS · OCR HTTP",
         )
-        return _empty_payload()
+        return _empty_payload(allowed)
 
     try:
         data = resp.json()
@@ -311,7 +368,7 @@ def extract_receipt(data_url):
             f"Anthropic response not JSON: {resp.text[:1500]}",
             "AKG ESS · OCR JSON",
         )
-        return _empty_payload()
+        return _empty_payload(allowed)
 
     blocks = data.get("content") or []
     text = "".join(b.get("text", "") for b in blocks if isinstance(b, dict) and b.get("type") == "text")
@@ -322,9 +379,9 @@ def extract_receipt(data_url):
             f"Raw text from model:\n{text[:1500]}",
             "AKG ESS · OCR parse",
         )
-        return _empty_payload()
+        return _empty_payload(allowed)
 
-    out = _empty_payload()
+    out = _empty_payload(allowed)
     for k in out:
         if k in parsed:
             out[k] = parsed[k]
@@ -336,4 +393,5 @@ def extract_receipt(data_url):
         out["vat_amount"] = float(out.get("vat_amount") or 0)
     except (TypeError, ValueError):
         out["vat_amount"] = 0
+    out["expense_type"] = _normalize_expense_type(out.get("expense_type"), allowed)
     return out
