@@ -179,8 +179,6 @@ function NewClaimSheet({ open, onClose, geofenceMode, onSubmit, isOffline, setOf
   const cameraRef = React.useRef(null);
   const [busy, setBusy] = React.useState(false);
 
-  React.useEffect(() => { if (open) setExpenses([]); }, [open]);
-
   // GL/cost-center auto-suggest based on current site (live GPS).
   // Falls back to head-office cost center when off-site or GPS isn't ready.
   const [currentSite, setCurrentSite] = React.useState(null);
@@ -204,6 +202,20 @@ function NewClaimSheet({ open, onClose, geofenceMode, onSubmit, isOffline, setOf
   const defaultCC = (window.SITES || []).find((s) => s.name === currentSite)?.cost_center || '';
   const defaultProject = currentSite || '';
 
+  // Step 1 state — one project per claim. Locked once any receipt is
+  // attached. '__other__' is the UI sentinel for unlinked spend
+  // (parking / courier / fuel between sites) — sent as null on submit.
+  const [project, setProject] = React.useState(defaultProject);
+  const sites = (window.SITES || []).filter((s) => s.status !== 'Archived');
+  const projectMeta = sites.find((s) => s.name === project);
+
+  React.useEffect(() => {
+    if (open) {
+      setExpenses([]);
+      setProject(defaultProject);
+    }
+  }, [open, defaultProject]);
+
   const onPick = async (e) => {
     const files = [...e.target.files];
     e.target.value = '';
@@ -225,7 +237,7 @@ function NewClaimSheet({ open, onClose, geofenceMode, onSubmit, isOffline, setOf
         is_tax_invoice: false,
         trn: '',
         invoice_number: '',
-        project: defaultProject,
+        project: project,
       };
       setExpenses((r) => [...r, newE]);
       window.frappe.extractReceipt(dataUrl).then((extracted) => {
@@ -317,7 +329,7 @@ function NewClaimSheet({ open, onClose, geofenceMode, onSubmit, isOffline, setOf
   };
 
   const total = expenses.reduce((s, r) => s + (parseFloat(r.amount) || 0), 0);
-  const allReady = expenses.length && expenses.every((r) => !r.scanning && r.description && r.amount > 0 && r.vendor && r.project && (!r.is_tax_invoice || (r.trn && r.trn.length >= 10)));
+  const allReady = !!project && expenses.length && expenses.every((r) => !r.scanning && r.description && r.amount > 0 && r.vendor && (!r.is_tax_invoice || (r.trn && r.trn.length >= 10)));
 
   // Derive VAT breakdown
   const vatLines = expenses.filter((r) => r.vat_included && !r.scanning);
@@ -335,16 +347,61 @@ function NewClaimSheet({ open, onClose, geofenceMode, onSubmit, isOffline, setOf
           {busy ? <span className="spinner" /> : `${t.submit} · ${fmtMoney(total)}`}
         </button>
       </>}>
+      {/* ── Step 1 — Project (one per claim, locked once a receipt exists) ── */}
+      <div className="claim-project-card">
+        <div className="claim-project-step">
+          <span className="claim-project-step-num">1</span>
+          <span>{t.project} *</span>
+        </div>
+        <select
+          className="field-input claim-project-select"
+          value={project}
+          onChange={(e) => setProject(e.target.value)}
+          disabled={expenses.length > 0}
+        >
+          <option value="">{t.select_project_ph}</option>
+          {sites.map((s) => <option key={s.name} value={s.name}>{s.project_name || s.name}</option>)}
+          <option disabled>──────────</option>
+          <option value="__other__">{t.project_other}</option>
+        </select>
+        {project === '__other__' ? (
+          <div className="claim-project-meta">
+            <Icon name="info" size={11} />
+            <span className="truncate">{t.project_other_hint}</span>
+          </div>
+        ) : (projectMeta && (
+          <div className="claim-project-meta">
+            <Icon name="pin" size={11} />
+            <span className="truncate">{projectMeta.project_name || projectMeta.name}</span>
+            {projectMeta.cost_center && <>
+              <span className="claim-project-meta-sep">·</span>
+              <span className="mono">{projectMeta.cost_center}</span>
+            </>}
+          </div>
+        ))}
+        {expenses.length > 0 && (
+          <div className="claim-project-locked">
+            <Icon name="check" size={11} /> {t.project_locked || 'All receipts go to this project'}
+          </div>
+        )}
+      </div>
+
+      {/* ── Step 2 — Snap / upload (gated until a project is picked) ────── */}
       {!expenses.length && (
-        <div style={{ padding: 32, textAlign: 'center', border: '2px dashed var(--border)', borderRadius: 'var(--radius)', background: 'var(--surface-2)' }}>
+        <div className={`claim-step2-empty ${!project ? 'is-disabled' : ''}`}>
+          <div className="claim-project-step" style={{ marginBottom: 12 }}>
+            <span className="claim-project-step-num">2</span>
+            <span>{t.snap_or_upload}</span>
+          </div>
           <Icon name="receipt" size={36} style={{ color: 'var(--text-muted)', marginBottom: 8 }} />
-          <div style={{ fontWeight: 600, marginBottom: 4 }}>{t.snap_or_upload}</div>
-          <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 14 }}>{t.autofill_hint}</div>
+          <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 14 }}>
+            {project ? t.autofill_hint : (t.select_project_first || 'Select a project to continue')}
+          </div>
           <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
-            <button className="btn btn-primary btn-sm" onClick={() => cameraRef.current?.click()}>
+            <button className="btn btn-primary btn-sm" onClick={() => cameraRef.current?.click()} disabled={!project}>
               <Icon name="camera" size={14} /> {t.scan_receipt}
             </button>
-            <button className="btn btn-ghost btn-sm" onClick={() => fileRef.current?.click()}>
+            <button className="btn btn-ghost btn-sm" onClick={() => fileRef.current?.click()} disabled={!project}>
               <Icon name="upload" size={14} /> {t.upload_receipt}
             </button>
           </div>
@@ -397,20 +454,19 @@ function ExpenseLineCard({ r, onChange, onRemove }) {
   const t = useT();
   const types = window.EXPENSE_CLAIM_TYPES;
   const isPdf = (r.attachment || '').toLowerCase().endsWith('.pdf');
-  // Active sites for project picker — restrict to non-archived
-  const sites = (window.SITES || []).filter((s) => s.status !== 'Archived');
 
   return (
-    <div className="card" style={{ position: 'relative', padding: 0, overflow: 'hidden', marginBottom: 12 }}>
-      {/* Bill preview */}
-      <div style={{ position: 'relative', height: 160, background: '#0F172A' }}>
+    <div className="claim-line-card" style={{ marginBottom: 12 }}>
+      {/* Receipt preview header — 16:9, cover, anchored to top so the
+          chip + remove buttons sit over the bill, not over a grey strip. */}
+      <div className="claim-line-receipt">
         {isPdf ? (
-          <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 6, color: 'white' }}>
-            <Icon name="file" size={36} />
-            <div style={{ fontSize: 12, opacity: 0.8 }}>{r.attachment}</div>
+          <div className="claim-line-receipt-pdf">
+            <Icon name="file" size={32} />
+            <div className="claim-line-receipt-pdf-name truncate">{r.attachment}</div>
           </div>
         ) : (
-          <img src={r.attachment_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+          <img src={r.attachment_url} alt="" className="claim-line-receipt-img" />
         )}
         {r.scanning && (
           <div className="scan-overlay">
@@ -419,134 +475,128 @@ function ExpenseLineCard({ r, onChange, onRemove }) {
             <div style={{ fontWeight: 600, fontSize: 13 }}>{t.scanning}</div>
           </div>
         )}
-        <button className="icon-btn" style={{ position: 'absolute', top: 8, insetInlineEnd: 8, background: 'rgba(0,0,0,.55)', color: 'white' }} onClick={onRemove}>
-          <Icon name="x" size={18} />
-        </button>
+
+        <div className="claim-line-receipt-toolbar">
+          <div className="claim-line-receipt-filechip">
+            <Icon name="receipt" size={11} />
+            <span className="truncate">{r.attachment}</span>
+          </div>
+          <button className="claim-line-receipt-remove" onClick={onRemove} aria-label="Remove receipt">
+            <Icon name="x" size={16} />
+          </button>
+        </div>
+
         {!r.scanning && (
-          <div style={{ position: 'absolute', bottom: 8, insetInlineStart: 8, background: 'rgba(15,128,61,.92)', color: 'white', padding: '4px 8px', borderRadius: 6, fontSize: 11, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}>
+          <div className="claim-line-receipt-badge">
             <Icon name="check" size={12} /> {t.auto_filled}
           </div>
         )}
-        <div style={{ position: 'absolute', top: 8, insetInlineStart: 8, background: 'rgba(0,0,0,.55)', color: 'white', padding: '3px 8px', borderRadius: 6, fontSize: 10, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}>
-          <Icon name="receipt" size={12} /> {r.attachment}
-        </div>
       </div>
 
-      <div style={{ padding: 14 }}>
-        {/* Project — first decision the engineer makes. Mandatory; gets a
-            tinted card so it stands out from the rest of the form. */}
-        <div
-          className="field"
-          style={{
-            background: r.project ? 'var(--ok-100)' : 'var(--warn-100)',
-            border: `1px solid ${r.project ? 'var(--ok)' : 'var(--warn)'}`,
-            borderRadius: 'var(--radius)',
-            padding: 12,
-            marginBottom: 14,
-            transition: 'background .15s, border-color .15s',
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-            <Icon name="pin" size={16} style={{ color: r.project ? 'var(--ok)' : 'var(--warn)' }} />
-            <label className="field-label" style={{ margin: 0, color: r.project ? 'var(--ok)' : 'var(--warn)', fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', fontSize: 11 }}>
-              {t.project} <span style={{ color: 'var(--bad)' }}>*</span>
-            </label>
-            {!r.project && (
-              <span className="chip chip-warn" style={{ marginInlineStart: 'auto', fontSize: 9.5, fontWeight: 700 }}>{t.required}</span>
-            )}
+      <div className="claim-line-form">
+        {/* ── Section: Categorize — horizontal-scroll chip strip ───── */}
+        <div className="claim-form-section">
+          <div className="claim-form-section-label">{t.expense_type}</div>
+          <div className="claim-type-strip" role="radiogroup" aria-label={t.expense_type}>
+            {types.map((c) => {
+              const active = r.expense_type === c.name;
+              return (
+                <button
+                  key={c.name}
+                  type="button"
+                  role="radio"
+                  aria-checked={active}
+                  className={`claim-type-chip ${active ? 'active' : ''}`}
+                  onClick={() => onChange({ expense_type: c.name })}
+                  disabled={r.scanning}
+                  style={active ? { background: c.bg, color: c.color, borderColor: c.color } : undefined}
+                >
+                  <Icon name={c.icon} size={14} />
+                  <span>{c.name}</span>
+                </button>
+              );
+            })}
           </div>
-          <select className="field-input" value={r.project || ''} onChange={(e) => onChange({ project: e.target.value })} disabled={r.scanning} style={{ background: 'white' }}>
-            <option value="">{t.select_project_ph}</option>
-            {sites.map((s) => <option key={s.name} value={s.name}>{s.project_name || s.name}</option>)}
-            <option disabled>──────────</option>
-            <option value="__other__">{t.project_other}</option>
-          </select>
-          {r.project === '__other__' && (
-            <div style={{ fontSize: 11, color: 'var(--text)', marginTop: 6, lineHeight: 1.4 }}>
-              <Icon name="info" size={11} style={{ marginInlineEnd: 4, verticalAlign: '-1px' }} />
-              {t.project_other_hint}
+        </div>
+
+        {/* ── Section: Receipt details ─────────────────────────────── */}
+        <div className="claim-form-section">
+          <div className="claim-form-section-label">{(t.expense_date || '').replace(' *', '')} & {(t.vendor || '').toLowerCase()}</div>
+          <div className="field-row">
+            <div className="field">
+              <label className="field-label">{t.expense_date} *</label>
+              <input className="field-input" type="date" value={r.expense_date} onChange={(e) => onChange({ expense_date: e.target.value })} disabled={r.scanning} />
             </div>
-          )}
-        </div>
-
-        {/* Expense Claim Type */}
-        <div className="field">
-          <label className="field-label">{t.expense_type} *</label>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 4, background: 'var(--surface-2)', padding: 3, borderRadius: 'var(--radius)' }}>
-            {types.map((c) => (
-              <button key={c.name} type="button" className={`seg-btn ${r.expense_type === c.name ? 'active' : ''}`} onClick={() => onChange({ expense_type: c.name })} style={{ padding: '8px 4px', flexDirection: 'column', display: 'flex', alignItems: 'center', gap: 2 }} disabled={r.scanning}>
-                <Icon name={c.icon} size={14} />
-                <span style={{ fontSize: 9.5, lineHeight: 1.1 }}>{c.name}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Date */}
-        <div className="field">
-          <label className="field-label">{t.expense_date} *</label>
-          <input className="field-input" type="date" value={r.expense_date} onChange={(e) => onChange({ expense_date: e.target.value })} disabled={r.scanning} />
-        </div>
-
-        {/* Vendor / Supplier */}
-        <div className="field">
-          <label className="field-label">{t.vendor} *</label>
-          <input className="field-input" type="text" value={r.vendor} onChange={(e) => onChange({ vendor: e.target.value })} disabled={r.scanning} placeholder={t.vendor_ph} />
-        </div>
-
-        {/* Tax invoice toggle + TRN */}
-        <div className="field">
-          <div className="row-flex" style={{ alignItems: 'center', justifyContent: 'space-between', marginBottom: r.is_tax_invoice ? 8 : 0 }}>
-            <label className="field-label" style={{ margin: 0 }}>{t.tax_invoice}</label>
-            <div className={`switch ${r.is_tax_invoice ? 'on' : ''}`} onClick={() => !r.scanning && onChange({ is_tax_invoice: !r.is_tax_invoice, vat_included: !r.is_tax_invoice ? true : r.vat_included })}>
-              <div className="switch-knob" />
+            <div className="field">
+              <label className="field-label">{t.amount} (AED) *</label>
+              <input className="field-input tabular" type="number" step="0.01" inputMode="decimal" value={r.amount} onChange={(e) => onChange({ amount: e.target.value })} disabled={r.scanning} placeholder="0.00" />
             </div>
           </div>
-          {r.is_tax_invoice && (
-            <input
-              className="field-input mono"
-              type="text"
-              value={r.trn || ''}
-              onChange={(e) => onChange({ trn: e.target.value.replace(/[^\d]/g, '').slice(0, 15) })}
-              disabled={r.scanning}
-              placeholder={t.trn_ph}
-              maxLength={15}
-              inputMode="numeric"
-            />
-          )}
-          {r.is_tax_invoice && r.trn && r.trn.length < 15 && (
-            <div style={{ fontSize: 11, color: 'var(--bad)', marginTop: 4 }}>{t.trn_length_hint}</div>
-          )}
-        </div>
 
-        {/* Description */}
-        <div className="field">
-          <label className="field-label">{t.description} *</label>
-          <textarea className="field-textarea" value={r.description} onChange={(e) => onChange({ description: e.target.value })} disabled={r.scanning} placeholder={t.expense_desc_ph} style={{ minHeight: 60 }} />
-        </div>
-
-        {/* Amount + VAT */}
-        <div className="field-row">
           <div className="field">
-            <label className="field-label">{t.amount} (AED) *</label>
-            <input className="field-input tabular" type="number" step="0.01" inputMode="decimal" value={r.amount} onChange={(e) => onChange({ amount: e.target.value })} disabled={r.scanning} />
+            <label className="field-label">{t.vendor} *</label>
+            <input className="field-input" type="text" value={r.vendor} onChange={(e) => onChange({ vendor: e.target.value })} disabled={r.scanning} placeholder={t.vendor_ph} />
           </div>
+
+          <div className="field">
+            <label className="field-label">{t.description} *</label>
+            <textarea className="field-textarea" value={r.description} onChange={(e) => onChange({ description: e.target.value })} disabled={r.scanning} placeholder={t.expense_desc_ph} style={{ minHeight: 56 }} />
+          </div>
+        </div>
+
+        {/* ── Section: Tax invoice & VAT ───────────────────────────── */}
+        <div className="claim-form-section">
+          <div className="claim-form-section-label">{t.tax_invoice} & VAT</div>
+
+          {/* VAT — segmented (always shown, helper-line below) */}
           <div className="field">
             <label className="field-label">{t.vat_included}</label>
-            <div className="seg" style={{ height: 48 }}>
+            <div className="seg" style={{ height: 44 }}>
               <button type="button" className={`seg-btn ${r.vat_included ? 'active' : ''}`} onClick={() => onChange({ vat_included: true })} disabled={r.scanning}>{t.yes}</button>
               <button type="button" className={`seg-btn ${!r.vat_included ? 'active' : ''}`} onClick={() => onChange({ vat_included: false })} disabled={r.scanning}>{t.no}</button>
             </div>
+            {!r.scanning && r.amount > 0 && r.vat_included && (
+              <div className="claim-line-vat-line">
+                <span>Subtotal {fmtMoney(parseFloat(r.amount) / 1.05)} + VAT {fmtMoney(parseFloat(r.amount) - parseFloat(r.amount) / 1.05)}</span>
+                <strong>{fmtMoney(r.amount)}</strong>
+              </div>
+            )}
+          </div>
+
+          {/* Tax invoice — full-width switch-row card + collapsible TRN */}
+          <div className="field">
+            <div
+              className={`switch-row ${r.is_tax_invoice ? 'on' : ''}`}
+              onClick={() => !r.scanning && onChange({ is_tax_invoice: !r.is_tax_invoice, vat_included: !r.is_tax_invoice ? true : r.vat_included })}
+              role="switch"
+              aria-checked={!!r.is_tax_invoice}
+            >
+              <div className="switch-row-body">
+                <div className="switch-row-title">{t.tax_invoice}</div>
+                <div className="switch-row-sub">TRN issued by FTA</div>
+              </div>
+              <div className={`switch ${r.is_tax_invoice ? 'on' : ''}`}>
+                <div className="switch-knob" />
+              </div>
+            </div>
+            {r.is_tax_invoice && (
+              <input
+                className="field-input mono"
+                style={{ marginTop: 8 }}
+                type="text"
+                value={r.trn || ''}
+                onChange={(e) => onChange({ trn: e.target.value.replace(/[^\d]/g, '').slice(0, 15) })}
+                disabled={r.scanning}
+                placeholder={t.trn_ph}
+                maxLength={15}
+                inputMode="numeric"
+              />
+            )}
+            {r.is_tax_invoice && r.trn && r.trn.length < 15 && (
+              <div style={{ fontSize: 11, color: 'var(--bad)', marginTop: 4 }}>{t.trn_length_hint}</div>
+            )}
           </div>
         </div>
-
-        {/* VAT breakdown for this line */}
-        {!r.scanning && r.amount > 0 && r.vat_included && (
-          <div style={{ background: 'var(--navy-50)', padding: '8px 10px', borderRadius: 'var(--radius-sm)', display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'var(--text-muted)' }}>
-            <span>Subtotal {fmtMoney(parseFloat(r.amount) / 1.05)} + VAT {fmtMoney(parseFloat(r.amount) - parseFloat(r.amount) / 1.05)}</span>
-            <strong style={{ color: 'var(--text)' }}>{fmtMoney(r.amount)}</strong>
-          </div>
-        )}
       </div>
     </div>
   );

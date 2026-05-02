@@ -1604,3 +1604,235 @@ input, textarea, select { font-family: inherit; font-size: inherit; }
   text-transform: uppercase;
 }
 [dir="rtl"] .reload-overlay-label { letter-spacing: 0; text-transform: none; }
+
+/* ============================================================
+   NEW CLAIM SHEET — Step 1 (Project) + Step 2 (Gated empty),
+   restructured ExpenseLineCard, switch-row, type chip strip.
+   ============================================================ */
+
+/* ─── New-claim line card ─────────────────────────────────────────────── */
+.claim-line-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+.claim-line-receipt {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  background: #0F172A;
+  overflow: hidden;
+}
+.claim-line-receipt-img {
+  width: 100%; height: 100%;
+  object-fit: cover; object-position: center top;
+  display: block;
+}
+.claim-line-receipt-pdf {
+  width: 100%; height: 100%;
+  display: flex; align-items: center; justify-content: center;
+  flex-direction: column; gap: 6px; color: white;
+}
+.claim-line-receipt-pdf-name { font-size: 12px; opacity: 0.85; max-width: 80%; }
+.claim-line-receipt::after {
+  content: ""; position: absolute; inset: 0;
+  background: linear-gradient(180deg, rgba(0,0,0,.45) 0%, transparent 22%, transparent 70%, rgba(0,0,0,.55) 100%);
+  pointer-events: none;
+}
+.claim-line-receipt-toolbar {
+  position: absolute; top: 10px; inset-inline: 10px;
+  display: flex; align-items: center; gap: 8px;
+  z-index: 1;
+}
+.claim-line-receipt-filechip {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+  color: white;
+  padding: 5px 10px;
+  border-radius: 999px;
+  font-size: 11px; font-weight: 600;
+  max-width: calc(100% - 44px);
+  min-width: 0;
+}
+.claim-line-receipt-filechip span { min-width: 0; }
+.claim-line-receipt-remove {
+  margin-inline-start: auto;
+  width: 32px; height: 32px;
+  border-radius: 999px; border: 0;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+  color: white;
+  display: inline-flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.claim-line-receipt-remove:hover { background: rgba(0, 0, 0, 0.75); }
+.claim-line-receipt-badge {
+  position: absolute; bottom: 10px; inset-inline-start: 10px;
+  display: inline-flex; align-items: center; gap: 5px;
+  background: var(--ok);
+  color: white;
+  padding: 5px 10px;
+  border-radius: 999px;
+  font-size: 11px; font-weight: 600;
+  box-shadow: 0 2px 8px rgba(15, 128, 61, 0.4);
+  z-index: 1;
+}
+
+/* Form sections */
+.claim-line-form {
+  padding: 4px 14px 14px;
+}
+.claim-form-section {
+  padding-top: 14px;
+  margin-top: 0;
+  border-top: 1px solid var(--border);
+}
+.claim-form-section:first-child { border-top: 0; padding-top: 14px; }
+.claim-form-section-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  margin-bottom: 10px;
+}
+[dir="rtl"] .claim-form-section-label {
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 11px;
+}
+
+/* Type chip strip — horizontal scroll, no wrapping */
+.claim-type-strip {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  scroll-snap-type: x proximity;
+  margin: 0 -14px;
+  padding: 2px 14px 6px;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.claim-type-strip::-webkit-scrollbar { display: none; }
+.claim-type-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  flex-shrink: 0;
+  scroll-snap-align: start;
+  padding: 9px 14px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.12s, border-color 0.12s, color 0.12s, transform 0.12s;
+}
+.claim-type-chip:disabled { opacity: 0.5; cursor: default; }
+.claim-type-chip:not(:disabled):hover { background: var(--surface); }
+.claim-type-chip.active {
+  /* inline style overrides bg/color/border for the per-type tint */
+  box-shadow: 0 0 0 1px currentColor inset;
+}
+
+/* Inline VAT helper line under the segmented Yes/No */
+.claim-line-vat-line {
+  background: var(--navy-50);
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  display: flex; justify-content: space-between; align-items: center;
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 8px;
+}
+.claim-line-vat-line strong { color: var(--text); font-weight: 700; }
+
+/* Switch row — title + sub + switch on the right */
+.switch-row {
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 14px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+}
+.switch-row.on {
+  background: color-mix(in oklab, var(--ok) 7%, var(--surface));
+  border-color: color-mix(in oklab, var(--ok) 35%, var(--border));
+}
+.switch-row-body { flex: 1; min-width: 0; }
+.switch-row-title { font-size: 13.5px; font-weight: 600; color: var(--text); }
+.switch-row-sub { font-size: 11.5px; color: var(--text-muted); margin-top: 1px; }
+
+/* ─── Step 1: Project chooser at top of New Claim sheet ─────────────── */
+.claim-project-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 14px;
+  margin-bottom: 14px;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+.claim-project-step {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-size: 12px; font-weight: 700;
+  color: var(--text);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 10px;
+}
+[dir="rtl"] .claim-project-step { text-transform: none; letter-spacing: 0; font-size: 13px; }
+.claim-project-step-num {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 20px; height: 20px;
+  border-radius: 999px;
+  background: var(--navy-900); color: white;
+  font-size: 11px; font-weight: 700;
+  letter-spacing: 0;
+}
+.claim-project-select { font-weight: 500; }
+.claim-project-select:disabled {
+  background: var(--surface-2);
+  color: var(--text);
+  opacity: 0.85;
+  cursor: default;
+}
+.claim-project-meta {
+  display: flex; align-items: center; gap: 6px;
+  margin-top: 8px;
+  font-size: 11.5px;
+  color: var(--text-muted);
+  min-width: 0;
+}
+.claim-project-meta-sep { opacity: 0.5; }
+.claim-project-locked {
+  display: inline-flex; align-items: center; gap: 5px;
+  margin-top: 8px;
+  padding: 4px 9px;
+  font-size: 10.5px; font-weight: 600;
+  color: var(--ok);
+  background: color-mix(in oklab, var(--ok) 10%, var(--surface));
+  border: 1px solid color-mix(in oklab, var(--ok) 30%, var(--border));
+  border-radius: 999px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+[dir="rtl"] .claim-project-locked { text-transform: none; letter-spacing: 0; font-size: 11.5px; }
+
+/* Step 2 empty state */
+.claim-step2-empty {
+  padding: 24px 18px 28px;
+  text-align: center;
+  border: 2px dashed var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface-2);
+  transition: opacity 0.15s;
+}
+.claim-step2-empty.is-disabled { opacity: 0.5; pointer-events: none; }
+.claim-step2-empty.is-disabled .btn { pointer-events: none; }
+.claim-step2-empty .claim-project-step { margin-bottom: 14px; }

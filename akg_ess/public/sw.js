@@ -6,7 +6,7 @@
 //   - Other cross-origin : passthrough (CDN handles its own caching)
 // Bump CACHE_VERSION whenever you ship a new build.
 
-const CACHE_VERSION = 'akg-ess-v52';
+const CACHE_VERSION = 'akg-ess-v53';
 const STATIC_CACHE = `static-${CACHE_VERSION}`;
 const RUNTIME_CACHE = `runtime-${CACHE_VERSION}`;
 const TILE_CACHE = `osm-tiles-${CACHE_VERSION}`;
