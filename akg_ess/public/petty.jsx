@@ -286,7 +286,10 @@ function NewClaimSheet({ open, onClose, geofenceMode, onSubmit, isOffline, setOf
         is_tax_invoice: !!e.is_tax_invoice,
         trn: e.trn,
         invoice_number: e.invoice_number,
-        project: e.project,
+        // 'Other' is a UI-only sentinel for unlinked expenses (parking,
+        // courier, fuel between sites). Send null so the Expense Claim's
+        // project field stays empty.
+        project: e.project === '__other__' ? null : e.project,
       })),
     };
     if (isOffline && setOfflineQueue) {
@@ -480,13 +483,22 @@ function ExpenseLineCard({ r, onChange, onRemove }) {
           )}
         </div>
 
-        {/* Project (employee selects — info not on the bill) */}
+        {/* Project (engineer selects — info isn't on the bill).  "Other"
+            (parking, courier, fuel between sites) is sent as null on the
+            Expense Claim's project field. */}
         <div className="field">
           <label className="field-label">{t.project} *</label>
           <select className="field-input" value={r.project || ''} onChange={(e) => onChange({ project: e.target.value })} disabled={r.scanning}>
             <option value="">{t.select_project_ph}</option>
             {sites.map((s) => <option key={s.name} value={s.name}>{s.project_name || s.name}</option>)}
+            <option disabled>──────────</option>
+            <option value="__other__">{t.project_other}</option>
           </select>
+          {r.project === '__other__' && (
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4, lineHeight: 1.4 }}>
+              {t.project_other_hint}
+            </div>
+          )}
         </div>
 
         {/* Description */}

@@ -512,6 +512,10 @@
         amount: parseFloat(e.amount) || 0,
         sanctioned_amount: parseFloat(e.amount) || 0,
         cost_center: e.cost_center || claim.cost_center,
+        // Engineer-selected project per row. petty.jsx maps the UI-only
+        // 'Other' option to null so unlinked expenses (parking, courier,
+        // fuel between sites) leave Expense Claim Detail.project blank.
+        project: e.project || null,
       }));
       const total = expenses.reduce((s, e) => s + (e.amount || 0), 0);
       const doc = {
