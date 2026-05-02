@@ -263,6 +263,20 @@ def _ocr_increment_and_check(cap):
 
 
 @frappe.whitelist()
+def get_petty_defaults():
+    """Read petty-cash defaults so the client can build Expense Claim
+    rows with the right VAT account head + rate. The account doctype
+    isn't visible to most ESS users by default, hence the wrapper."""
+    from akg_ess.akg_ess.doctype.akg_ess_settings.akg_ess_settings import get_settings
+    s = get_settings()
+    return {
+        "vat_account": s.get("default_vat_account") or "",
+        "vat_rate": float(s.get("default_vat_rate") or 5),
+        "vat_description": s.get("default_vat_description") or "VAT 5%",
+    }
+
+
+@frappe.whitelist()
 def extract_receipt(data_url):
     """Server-side OCR proxy. Forwards a base64 image to Anthropic's
     Claude Vision API. Settings (key, model, enable flag, monthly cap)

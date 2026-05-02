@@ -31,4 +31,7 @@ def get_settings():
         "anthropic_api_key": api_key,
         "monthly_call_cap": int((doc.monthly_call_cap if doc and doc.monthly_call_cap else 5000)),
         "default_radius_meters": int((doc.default_radius_meters if doc and doc.default_radius_meters else 200)),
+        "default_vat_account": (doc.default_vat_account if doc and doc.default_vat_account else ""),
+        "default_vat_rate": float((doc.default_vat_rate if doc and doc.default_vat_rate is not None else 5)),
+        "default_vat_description": (doc.default_vat_description if doc and doc.default_vat_description else "VAT 5%"),
     }

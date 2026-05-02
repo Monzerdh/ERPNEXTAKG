@@ -86,6 +86,34 @@
   }
 
   // ───────────────────────────────────────────────────────────────────
+  // Misc helpers
+  // ───────────────────────────────────────────────────────────────────
+  function dataUrlToFile(dataUrl, filename) {
+    const idx = dataUrl.indexOf(',');
+    if (idx < 0) throw new Error('not a data URL');
+    const header = dataUrl.slice(0, idx);
+    const b64 = dataUrl.slice(idx + 1);
+    const m = /data:([^;]+);base64/i.exec(header);
+    const mime = m ? m[1] : 'image/jpeg';
+    const binary = atob(b64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return new File([bytes], filename || 'receipt.jpg', { type: mime });
+  }
+
+  let _pettyDefaultsCache = null;
+  async function loadPettyDefaults() {
+    if (_pettyDefaultsCache) return _pettyDefaultsCache;
+    try {
+      const r = await callMethod('akg_ess.api.get_petty_defaults');
+      _pettyDefaultsCache = r || {};
+    } catch (e) {
+      _pettyDefaultsCache = { vat_account: '', vat_rate: 5, vat_description: 'VAT 5%' };
+    }
+    return _pettyDefaultsCache;
+  }
+
+  // ───────────────────────────────────────────────────────────────────
   // Cached lookups
   // ───────────────────────────────────────────────────────────────────
   let _currentUserCache = null;
@@ -505,24 +533,53 @@
 
     async submitClaim(claim) {
       const u = await loadCurrentUser();
-      const expenses = (claim.expenses || []).map((e) => ({
+      const rawRows = claim.expenses || [];
+
+      // Parent.project: only when every row agrees on a single project.
+      // Mixed claims (or any '__other__' row) leave the parent blank.
+      const projects = rawRows.map((e) => e.project).filter((p) => p && p !== '__other__');
+      const uniqueProjects = [...new Set(projects)];
+      const hasOther = rawRows.some((e) => e.project === '__other__');
+      const parentProject = (uniqueProjects.length === 1 && !hasOther) ? uniqueProjects[0] : null;
+
+      const expenses = rawRows.map((e) => ({
         expense_date: e.expense_date || claim.posting_date || todayISO(),
         expense_type: e.expense_type,
         description: e.description || '',
         amount: parseFloat(e.amount) || 0,
         sanctioned_amount: parseFloat(e.amount) || 0,
         cost_center: e.cost_center || claim.cost_center,
-        // Engineer-selected project per row. petty.jsx maps the UI-only
-        // 'Other' option to null so unlinked expenses (parking, courier,
-        // fuel between sites) leave Expense Claim Detail.project blank.
-        project: e.project || null,
+        // Per-row project. '__other__' is a UI sentinel for unlinked
+        // expenses (parking, courier, fuel between sites) — sent as null.
+        project: (e.project && e.project !== '__other__') ? e.project : null,
       }));
       const total = expenses.reduce((s, e) => s + (e.amount || 0), 0);
+
+      // Build Expense Taxes & Charges from VAT-included rows. Requires
+      // an admin to set "Default VAT Account" in AKG ESS Settings.
+      const defaults = await loadPettyDefaults();
+      const taxes = [];
+      if (defaults.vat_account) {
+        const rate = defaults.vat_rate || 5;
+        const vatAmount = rawRows
+          .filter((e) => e.vat_included)
+          .reduce((s, e) => s + ((parseFloat(e.amount) || 0) * rate / (100 + rate)), 0);
+        if (vatAmount > 0) {
+          taxes.push({
+            account_head: defaults.vat_account,
+            description: defaults.vat_description || `VAT ${rate}%`,
+            rate,
+            tax_amount: Math.round(vatAmount * 100) / 100,
+          });
+        }
+      }
+
       const doc = {
         employee: u.employee,
         posting_date: claim.posting_date || todayISO(),
         company: u.company,
         cost_center: claim.cost_center || null,
+        project: parentProject,
         approval_status: 'Draft',
         total_claimed_amount: total,
         total_sanctioned_amount: total,
@@ -530,16 +587,29 @@
         local_id: claim._localId || localId(),
       };
       if (u.expense_approver) doc.expense_approver = u.expense_approver;
+      if (taxes.length) doc.taxes = taxes;
+
       const created = await insertResource('Expense Claim', doc);
-      if (Array.isArray(claim.attachments)) {
-        for (const a of claim.attachments) {
-          if (a && a.file_url) {
-            await callMethod('frappe.client.insert', {
-              doc: { doctype: 'File', file_url: a.file_url, attached_to_doctype: 'Expense Claim', attached_to_name: created.name, is_private: 1 },
-            }).catch(() => {});
+
+      // Upload each row's receipt image as an attachment on the Expense
+      // Claim. Rows carry their bill as a base64 data URL (so the offline
+      // outbox can hold them without a server round-trip).
+      for (const e of rawRows) {
+        if (e.attachment_url && typeof e.attachment_url === 'string' && e.attachment_url.startsWith('data:')) {
+          try {
+            const file = dataUrlToFile(e.attachment_url, e.attachment || 'receipt.jpg');
+            await window.frappe.uploadFile(file, {
+              isPrivate: true,
+              doctype: 'Expense Claim',
+              docname: created.name,
+            });
+          } catch (err) {
+            // Don't fail the whole claim if one attachment upload fails;
+            // the row data is already saved and admins can attach manually.
           }
         }
       }
+
       return created;
     },
 
