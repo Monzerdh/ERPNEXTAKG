@@ -237,6 +237,24 @@
       }));
     },
 
+    // Every active Project, regardless of whether it has GPS/geofence
+    // configured. Powers the petty-cash project picker — engineers may
+    // need to file expenses against admin/back-office projects too.
+    async getAllActiveProjects() {
+      const rows = await listResource('Project', {
+        filters: [['status', '=', 'Open']],
+        fields: ['name', 'project_name', 'customer', 'cost_center'],
+        orderBy: 'project_name asc',
+        limit: 0,
+      }).catch(() => []);
+      return rows.map((p) => ({
+        name: p.name,
+        project_name: p.project_name || p.name,
+        client: p.customer || '',
+        cost_center: p.cost_center || '',
+      }));
+    },
+
     // ─── Attendance / Checkin ────────────────────────────────────────
     async getMyCheckins({ fromDate, toDate, limit = 30 } = {}) {
       const u = await loadCurrentUser();
@@ -796,13 +814,18 @@
     // The app shell calls this once after login so those reads see real
     // data. Components that need fresh values still call frappe.* directly.
     async hydrateLegacyGlobals() {
-      const [sites, claimTypes, leaveBalances, activityTypes] = await Promise.all([
+      const [sites, projects, claimTypes, leaveBalances, activityTypes] = await Promise.all([
         window.frappe.getActiveSites().catch(() => []),
+        window.frappe.getAllActiveProjects().catch(() => []),
         window.frappe.getExpenseClaimTypes().catch(() => []),
         window.frappe.getLeaveBalances().catch(() => []),
         window.frappe.getActivityTypes().catch(() => []),
       ]);
       window.SITES = sites;
+      // PROJECTS = all active Projects (GPS-equipped or not). Used by
+      // petty.jsx for the claim project picker. SITES stays attendance-
+      // specific because it requires geofence coordinates.
+      window.PROJECTS = projects;
       window.EXPENSE_CLAIM_TYPES = claimTypes;
       window.LEAVE_BALANCES = leaveBalances;
       window.ACTIVITY_TYPES = activityTypes;
@@ -811,7 +834,7 @@
       // Fire-and-forget — the SW caches each tile via its existing OSM
       // cache-first strategy.
       try { window.frappe.prewarmSiteTiles(sites); } catch (e) {}
-      return { sites, claimTypes, leaveBalances, activityTypes };
+      return { sites, projects, claimTypes, leaveBalances, activityTypes };
     },
 
     // ─── Offline helpers ─────────────────────────────────────────────

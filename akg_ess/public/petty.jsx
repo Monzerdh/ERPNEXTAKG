@@ -200,21 +200,21 @@ function NewClaimSheet({ open, onClose, geofenceMode, onSubmit, isOffline, setOf
   // Claim insert. Hardcoding a name here would 400 on sites that don't
   // happen to have that cost center.
   const defaultCC = (window.SITES || []).find((s) => s.name === currentSite)?.cost_center || '';
-  const defaultProject = currentSite || '';
 
-  // Step 1 state — one project per claim. Locked once any receipt is
-  // attached. '__other__' is the UI sentinel for unlinked spend
-  // (parking / courier / fuel between sites) — sent as null on submit.
-  const [project, setProject] = React.useState(defaultProject);
-  const sites = (window.SITES || []).filter((s) => s.status !== 'Archived');
-  const projectMeta = sites.find((s) => s.name === project);
+  // One project per claim — picked AFTER scanning. '__other__' is the
+  // UI sentinel for unlinked spend (parking / courier / fuel between
+  // sites); sent as null on submit. The dropdown is sourced from
+  // window.PROJECTS (every active Project, not just GPS-equipped sites).
+  const [project, setProject] = React.useState('');
+  const projects = window.PROJECTS || [];
+  const projectMeta = projects.find((s) => s.name === project);
 
   React.useEffect(() => {
     if (open) {
       setExpenses([]);
-      setProject(defaultProject);
+      setProject('');
     }
-  }, [open, defaultProject]);
+  }, [open]);
 
   const onPick = async (e) => {
     const files = [...e.target.files];
@@ -298,10 +298,12 @@ function NewClaimSheet({ open, onClose, geofenceMode, onSubmit, isOffline, setOf
         is_tax_invoice: !!e.is_tax_invoice,
         trn: e.trn,
         invoice_number: e.invoice_number,
-        // 'Other' is a UI-only sentinel for unlinked expenses (parking,
-        // courier, fuel between sites). Send null so the Expense Claim's
-        // project field stays empty.
-        project: e.project === '__other__' ? null : e.project,
+        // One project per claim — fan the latest top-level pick onto
+        // every row at submit time (rows were created before the
+        // project was chosen). 'Other' is a UI-only sentinel for
+        // unlinked expenses (parking / courier / fuel between sites);
+        // send null so Expense Claim Detail.project stays empty.
+        project: (project && project !== '__other__') ? project : null,
       })),
     };
     if (isOffline && setOfflineQueue) {
@@ -347,64 +349,66 @@ function NewClaimSheet({ open, onClose, geofenceMode, onSubmit, isOffline, setOf
           {busy ? <span className="spinner" /> : `${t.submit} · ${fmtMoney(total)}`}
         </button>
       </>}>
-      {/* ── Step 1 — Project (one per claim, locked once a receipt exists) ── */}
-      <div className="claim-project-card">
-        <div className="claim-project-step">
-          <span className="claim-project-step-num">1</span>
-          <span>{t.project} *</span>
-        </div>
-        <select
-          className="field-input claim-project-select"
-          value={project}
-          onChange={(e) => setProject(e.target.value)}
-          disabled={expenses.length > 0}
-        >
-          <option value="">{t.select_project_ph}</option>
-          {sites.map((s) => <option key={s.name} value={s.name}>{s.project_name || s.name}</option>)}
-          <option disabled>──────────</option>
-          <option value="__other__">{t.project_other}</option>
-        </select>
-        {project === '__other__' ? (
-          <div className="claim-project-meta">
-            <Icon name="info" size={11} />
-            <span className="truncate">{t.project_other_hint}</span>
-          </div>
-        ) : (projectMeta && (
-          <div className="claim-project-meta">
-            <Icon name="pin" size={11} />
-            <span className="truncate">{projectMeta.project_name || projectMeta.name}</span>
-            {projectMeta.cost_center && <>
-              <span className="claim-project-meta-sep">·</span>
-              <span className="mono">{projectMeta.cost_center}</span>
-            </>}
-          </div>
-        ))}
-        {expenses.length > 0 && (
-          <div className="claim-project-locked">
-            <Icon name="check" size={11} /> {t.project_locked || 'All receipts go to this project'}
-          </div>
-        )}
-      </div>
-
-      {/* ── Step 2 — Snap / upload (gated until a project is picked) ────── */}
+      {/* ── Step 1 — Snap or upload (always first, no gating) ─────────── */}
       {!expenses.length && (
-        <div className={`claim-step2-empty ${!project ? 'is-disabled' : ''}`}>
+        <div className="claim-step2-empty">
           <div className="claim-project-step" style={{ marginBottom: 12 }}>
-            <span className="claim-project-step-num">2</span>
+            <span className="claim-project-step-num">1</span>
             <span>{t.snap_or_upload}</span>
           </div>
           <Icon name="receipt" size={36} style={{ color: 'var(--text-muted)', marginBottom: 8 }} />
           <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 14 }}>
-            {project ? t.autofill_hint : (t.select_project_first || 'Select a project to continue')}
+            {t.autofill_hint}
           </div>
           <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
-            <button className="btn btn-primary btn-sm" onClick={() => cameraRef.current?.click()} disabled={!project}>
+            <button className="btn btn-primary btn-sm" onClick={() => cameraRef.current?.click()}>
               <Icon name="camera" size={14} /> {t.scan_receipt}
             </button>
-            <button className="btn btn-ghost btn-sm" onClick={() => fileRef.current?.click()} disabled={!project}>
+            <button className="btn btn-ghost btn-sm" onClick={() => fileRef.current?.click()}>
               <Icon name="upload" size={14} /> {t.upload_receipt}
             </button>
           </div>
+        </div>
+      )}
+
+      {/* ── Step 2 — Project (only appears once at least one receipt is in;
+              mandatory before submit; one project per claim) ────────── */}
+      {expenses.length > 0 && (
+        <div className="claim-project-card">
+          <div className="claim-project-step">
+            <span className="claim-project-step-num">2</span>
+            <span>{t.project} *</span>
+          </div>
+          <select
+            className="field-input claim-project-select"
+            value={project}
+            onChange={(e) => setProject(e.target.value)}
+          >
+            <option value="">{t.select_project_ph}</option>
+            {projects.map((s) => <option key={s.name} value={s.name}>{s.project_name || s.name}</option>)}
+            <option disabled>──────────</option>
+            <option value="__other__">{t.project_other}</option>
+          </select>
+          {project === '__other__' ? (
+            <div className="claim-project-meta">
+              <Icon name="info" size={11} />
+              <span className="truncate">{t.project_other_hint}</span>
+            </div>
+          ) : (projectMeta && (
+            <div className="claim-project-meta">
+              <Icon name="pin" size={11} />
+              <span className="truncate">{projectMeta.project_name || projectMeta.name}</span>
+              {projectMeta.cost_center && <>
+                <span className="claim-project-meta-sep">·</span>
+                <span className="mono">{projectMeta.cost_center}</span>
+              </>}
+            </div>
+          ))}
+          {project && (
+            <div className="claim-project-locked">
+              <Icon name="check" size={11} /> {t.project_locked || 'All receipts go to this project'}
+            </div>
+          )}
         </div>
       )}
 

@@ -8,6 +8,7 @@
 
 window.CURRENT_USER = null;
 window.SITES = [];
+window.PROJECTS = [];
 window.EXPENSE_CLAIM_TYPES = [];
 window.LEAVE_BALANCES = [];
 window.PROJECT_TASKS = [];
