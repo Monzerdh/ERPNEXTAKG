@@ -38,6 +38,7 @@ function ProfileScreen({ role, setRole, onLogout, outboxCount = 0, onOpenOutbox 
 
       {role === 'manager' && <ManagerTeamCard />}
       {role === 'manager' && <GeofenceViolations />}
+      {role === 'manager' && window.MissedCheckoutsQueue && <MissedCheckoutsQueue />}
 
       <div className="section-label"><span>{t.app}</span></div>
       <div className="card card-flush">

@@ -33,6 +33,12 @@ doc_events = {
     "Geofence Violation": {
         "on_update": "akg_ess.akg_ess.doctype.geofence_violation.geofence_violation.on_status_change",
     },
+    # When a Missed Checkout flips to Approved, the controller writes
+    # the matching Employee Checkin OUT so the day's hours land on the
+    # timesheet. Idempotent — re-saves don't double-write.
+    "Missed Checkout": {
+        "on_update": "akg_ess.akg_ess.doctype.missed_checkout.missed_checkout.on_status_change",
+    },
     # Office workers (Employee.is_office_worker = 1) are limited to exactly
     # one IN and one OUT per calendar day.  This hook rejects duplicates
     # before insert, so retries / the offline outbox can never accidentally
@@ -86,6 +92,18 @@ fixtures = [
 # Filter the ESS Notification list so users only ever see their own.
 permission_query_conditions = {
     "ESS Notification": "akg_ess.akg_ess.doctype.ess_notification.ess_notification.get_permission_query_conditions",
+    "Missed Checkout":  "akg_ess.akg_ess.doctype.missed_checkout.missed_checkout.get_permission_query_conditions",
+}
+
+# ──────────────────────────────────────────────────────────────────────
+# Scheduler — daily scan for missed check-outs (00:30 site time).
+# ──────────────────────────────────────────────────────────────────────
+scheduler_events = {
+    "cron": {
+        "30 0 * * *": [
+            "akg_ess.api.scan_missed_checkouts",
+        ],
+    },
 }
 
 has_permission = {

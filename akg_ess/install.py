@@ -39,6 +39,7 @@ OUR_DOCTYPES = [
     "Geofence Violation",
     "ESS Notification",
     "Petty Cash Top-up Request",
+    "Missed Checkout",
     "AKG ESS Settings",
 ]
 

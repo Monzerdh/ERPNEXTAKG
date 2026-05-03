@@ -549,6 +549,45 @@
       return listResource('Expense Claim Type', { fields: ['name'], limit: 0 }).catch(() => []);
     },
 
+    // ─── Missed Check-out ────────────────────────────────────────────
+    // Server-side scheduler creates a 'Missed Checkout' row at midnight
+    // for any unmatched IN > 12h old. The employee resolves it via the
+    // self-rectify modal; the manager approves/rejects from Profile.
+    async getMyMissedCheckoutHold() {
+      try {
+        return await callMethod('akg_ess.api.get_my_missed_checkout_hold');
+      } catch (e) { return null; }
+    },
+    async getMyPendingMissedCheckouts() {
+      const u = await loadCurrentUser();
+      if (!u.employee) return [];
+      try {
+        const r = await callMethod('akg_ess.api.get_my_pending_missed_checkouts');
+        return Array.isArray(r) ? r : [];
+      } catch (e) { return []; }
+    },
+    async getMissedCheckouts() {
+      try {
+        const r = await callMethod('akg_ess.api.get_team_missed_checkouts');
+        return Array.isArray(r) ? r : [];
+      } catch (e) { return []; }
+    },
+    async submitMissedCheckout(name, { proposed_out_time, reason } = {}) {
+      return callMethod('akg_ess.api.submit_missed_checkout', {
+        name, proposed_out_time, reason: reason || '',
+      });
+    },
+    async approveMissedCheckout(name, { edited_out_time, comment } = {}) {
+      return callMethod('akg_ess.api.approve_missed_checkout', {
+        name, edited_out_time: edited_out_time || '', comment: comment || '',
+      });
+    },
+    async rejectMissedCheckout(name, comment) {
+      return callMethod('akg_ess.api.reject_missed_checkout', {
+        name, comment: comment || '',
+      });
+    },
+
     async submitClaim(claim) {
       const u = await loadCurrentUser();
       const rawRows = claim.expenses || [];

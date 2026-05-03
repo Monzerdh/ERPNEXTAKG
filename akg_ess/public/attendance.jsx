@@ -10,6 +10,31 @@ function AttendanceScreen(props) {
   return <SiteAttendanceScreen {...props} />;
 }
 
+// Banner under the hero: 'pending review' (warn) or 'approved · auto-posted'
+// (ok, sticky for 24h after approval). Reads from the same backend method
+// the manager queue uses, filtered to the current user. Re-fetches when
+// the global 'akg:missed-checkout-resolved' event fires (after the modal
+// finishes its own submission round).
+function MissedCheckoutBanner() {
+  const [hold, setHold] = React.useState(null);
+  const refresh = React.useCallback(() => {
+    if (!window.frappe || !window.frappe.getMyMissedCheckoutHold) {
+      setHold(null);
+      return;
+    }
+    window.frappe.getMyMissedCheckoutHold()
+      .then((row) => setHold(row || null))
+      .catch(() => setHold(null));
+  }, []);
+  React.useEffect(() => {
+    refresh();
+    window.addEventListener('akg:missed-checkout-resolved', refresh);
+    return () => window.removeEventListener('akg:missed-checkout-resolved', refresh);
+  }, [refresh]);
+  if (!hold || !window.MissedCheckoutHoldStrip) return null;
+  return <MissedCheckoutHoldStrip status={hold.status} date={hold.date} />;
+}
+
 // ─── Site worker flow (original, unchanged behaviour) ──────────────────
 function SiteAttendanceScreen({ geofenceMode, offlineQueue, setOfflineQueue, isOffline, setIsOffline, onOpenMonthlyReport }) {
   const t = useT();
@@ -269,6 +294,11 @@ function SiteAttendanceScreen({ geofenceMode, offlineQueue, setOfflineQueue, isO
         sessions={sessions}
         totalRaw={totalRaw}
       />
+
+      {/* Missed-checkout hold strip — surfaces yesterday's pending /
+          recently-approved hold straight under the hero. */}
+      <MissedCheckoutBanner />
+
 
       {/* Big check-in/out button — single CTA copy split into label + sub */}
       <div style={{ marginTop: 14 }}>
@@ -533,6 +563,9 @@ function OfficeAttendanceScreen({ offlineQueue, setOfflineQueue, isOffline, setI
           </div>
         </div>
       </div>
+
+      {/* Missed-checkout hold strip — same surface as the site flow. */}
+      <MissedCheckoutBanner />
 
       {/* Primary action — three mutually exclusive renders */}
       <div style={{ marginTop: 14 }}>

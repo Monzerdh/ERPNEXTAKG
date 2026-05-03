@@ -409,3 +409,266 @@ def extract_receipt(data_url):
         out["vat_amount"] = 0
     out["expense_type"] = _normalize_expense_type(out.get("expense_type"), allowed)
     return out
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Missed Check-out (Option B — self-rectify)
+# ──────────────────────────────────────────────────────────────────────
+
+def _hours_between(in_time, ref_dt):
+    """Best-effort elapsed hours between an Employee Checkin time string
+    (either 'YYYY-MM-DD HH:MM:SS' or a datetime) and a reference datetime."""
+    from frappe.utils import get_datetime
+    try:
+        in_dt = get_datetime(in_time)
+        return max(0, int((ref_dt - in_dt).total_seconds() // 3600))
+    except Exception:
+        return 0
+
+
+def _serialize_mc(row):
+    """Shape a Missed Checkout row for the client. Mirrors what the
+    designer's prototype expected: { name, date, in_time, site, status,
+    employee_name, avatar_initials, proposed_out_time, ... }"""
+    site = None
+    if row.get("site_name"):
+        site = {
+            "name": row["site_name"],
+            "project_name": row.get("site_project_name") or row["site_name"],
+            "kind": "office" if row.get("is_office_worker") else "site",
+        }
+    rejection = None
+    if row.get("status") == "Rejected" and row.get("approver_comment"):
+        rejection = {
+            "manager": frappe.db.get_value("User", row.get("approver"), "full_name") or row.get("approver"),
+            "note": row.get("approver_comment") or "",
+            "last_time": row.get("proposed_out_time") or "",
+        }
+    avatar = ""
+    if row.get("employee_name"):
+        parts = [p for p in row["employee_name"].split() if p]
+        avatar = (parts[0][0] + (parts[1][0] if len(parts) > 1 else "")).upper() if parts else ""
+    return {
+        "name": row["name"],
+        "date": str(row["date"]) if row.get("date") else "",
+        "in_time": row.get("in_time") or "",
+        "site": site,
+        "site_name": (site["project_name"] if site else ""),
+        "status": row.get("status") or "Pending",
+        "employee": row.get("employee"),
+        "employee_name": row.get("employee_name") or row.get("employee"),
+        "avatar_initials": avatar,
+        "is_office_worker": bool(row.get("is_office_worker")),
+        "proposed_out_time": row.get("proposed_out_time") or "",
+        "edited_out_time": row.get("edited_out_time") or "",
+        "reason": row.get("reason") or "",
+        "elapsed_h": row.get("elapsed_h") or 0,
+        "approver": row.get("approver") or "",
+        "approver_comment": row.get("approver_comment") or "",
+        "submitted_on": str(row.get("submitted_on") or ""),
+        "rejection": rejection,
+        "last_proposed_out_time": row.get("proposed_out_time") or "",
+    }
+
+
+@frappe.whitelist()
+def get_my_pending_missed_checkouts():
+    """Rows the current employee still has to fix (Unsubmitted or
+    Rejected). The modal opens one at a time, oldest first.
+    Pending rows (already submitted) are NOT returned — they're waiting
+    on the manager and only surface as a hold-strip banner."""
+    user = frappe.session.user
+    emp = frappe.db.get_value("Employee", {"user_id": user}, "name")
+    if not emp:
+        return []
+    rows = frappe.get_all(
+        "Missed Checkout",
+        filters=[["employee", "=", emp], ["status", "in", ["Unsubmitted", "Rejected"]]],
+        fields=[
+            "name", "date", "in_time", "site_name", "site_project_name",
+            "is_office_worker", "status", "employee", "employee_name",
+            "proposed_out_time", "edited_out_time", "reason", "elapsed_h",
+            "approver", "approver_comment", "submitted_on",
+        ],
+        order_by="date asc",
+        limit_page_length=0,
+        ignore_permissions=True,
+    )
+    return [_serialize_mc(r) for r in rows]
+
+
+@frappe.whitelist()
+def get_my_missed_checkout_hold():
+    """Most recent Pending or just-Approved (within 24h) row for the
+    current employee. Drives the hold-strip banner under the hero."""
+    from frappe.utils import now_datetime, get_datetime
+    user = frappe.session.user
+    emp = frappe.db.get_value("Employee", {"user_id": user}, "name")
+    if not emp:
+        return None
+    rows = frappe.get_all(
+        "Missed Checkout",
+        filters=[["employee", "=", emp], ["status", "in", ["Pending", "Approved"]]],
+        fields=["name", "date", "status", "approved_on"],
+        order_by="modified desc",
+        limit_page_length=1,
+        ignore_permissions=True,
+    )
+    if not rows:
+        return None
+    row = rows[0]
+    if row["status"] == "Approved":
+        # Only show the green pill for 24h post-approval.
+        try:
+            decided = get_datetime(row.get("approved_on"))
+            if decided and (now_datetime() - decided).total_seconds() > 24 * 3600:
+                return None
+        except Exception:
+            pass
+        return {"name": row["name"], "status": "approved", "date": str(row["date"])}
+    return {"name": row["name"], "status": "pending", "date": str(row["date"])}
+
+
+@frappe.whitelist()
+def get_team_missed_checkouts():
+    """Manager queue. Pending first, then any decided rows from the
+    last 7 days. Permission scoping via permission_query_conditions."""
+    rows = frappe.get_all(
+        "Missed Checkout",
+        filters=[["status", "in", ["Pending", "Approved", "Rejected"]]],
+        fields=[
+            "name", "date", "in_time", "site_name", "site_project_name",
+            "is_office_worker", "status", "employee", "employee_name",
+            "proposed_out_time", "edited_out_time", "reason", "elapsed_h",
+            "approver", "approver_comment", "submitted_on",
+        ],
+        order_by="modified desc",
+        limit_page_length=200,
+    )
+    return [_serialize_mc(r) for r in rows]
+
+
+@frappe.whitelist()
+def submit_missed_checkout(name, proposed_out_time, reason=""):
+    """Employee submits the modal → flips Unsubmitted/Rejected → Pending.
+    The owner check enforces self-only."""
+    from frappe.utils import now_datetime
+    doc = frappe.get_doc("Missed Checkout", name)
+    user = frappe.session.user
+    me_emp = frappe.db.get_value("Employee", {"user_id": user}, "name")
+    if doc.employee != me_emp:
+        frappe.throw("Not your row.")
+    if doc.status not in ("Unsubmitted", "Rejected"):
+        frappe.throw("This missed-checkout has already been submitted.")
+    doc.proposed_out_time = (proposed_out_time or "").strip()
+    doc.reason = (reason or "").strip()
+    doc.status = "Pending"
+    doc.submitted_on = now_datetime()
+    doc.flags.ignore_permissions = True
+    doc.save()
+    return _serialize_mc(doc.as_dict())
+
+
+@frappe.whitelist()
+def approve_missed_checkout(name, edited_out_time="", comment=""):
+    """Manager approves → on_status_change creates the matching OUT
+    Employee Checkin so the day's hours land on the timesheet."""
+    from frappe.utils import now_datetime
+    doc = frappe.get_doc("Missed Checkout", name)
+    if doc.status != "Pending":
+        frappe.throw("Only Pending rows can be approved.")
+    if edited_out_time:
+        doc.edited_out_time = edited_out_time.strip()
+    doc.approver = frappe.session.user
+    doc.approver_comment = (comment or "").strip()
+    doc.approved_on = now_datetime()
+    doc.status = "Approved"
+    doc.flags.ignore_permissions = True
+    doc.save()
+    return _serialize_mc(doc.as_dict())
+
+
+@frappe.whitelist()
+def reject_missed_checkout(name, comment=""):
+    from frappe.utils import now_datetime
+    doc = frappe.get_doc("Missed Checkout", name)
+    if doc.status != "Pending":
+        frappe.throw("Only Pending rows can be rejected.")
+    doc.approver = frappe.session.user
+    doc.approver_comment = (comment or "Rejected — please re-submit.").strip()
+    doc.approved_on = now_datetime()
+    doc.status = "Rejected"
+    doc.flags.ignore_permissions = True
+    doc.save()
+    return _serialize_mc(doc.as_dict())
+
+
+def scan_missed_checkouts():
+    """Scheduler — runs daily ~00:30 site time. For every Employee
+    Checkin from yesterday with log_type='IN' and no matching OUT, create
+    a Missed Checkout row in status='Unsubmitted'. Idempotent — never
+    creates duplicates for the same employee+date."""
+    from frappe.utils import now_datetime, add_days
+    today = frappe.utils.nowdate()
+    yesterday = add_days(today, -1)
+    ref_dt = now_datetime()
+
+    rows = frappe.db.sql("""
+        SELECT name, employee, log_type, time, project
+        FROM `tabEmployee Checkin`
+        WHERE DATE(time) = %s
+        ORDER BY employee, time
+    """, (yesterday,), as_dict=True)
+
+    by_emp = {}
+    for r in rows:
+        by_emp.setdefault(r["employee"], []).append(r)
+
+    created = 0
+    for emp, events in by_emp.items():
+        events.sort(key=lambda x: x["time"])
+        unmatched = None
+        for e in events:
+            if e["log_type"] == "IN":
+                unmatched = e
+            elif e["log_type"] == "OUT" and unmatched:
+                unmatched = None
+        if not unmatched:
+            continue
+        if frappe.db.exists("Missed Checkout", {"employee": emp, "date": yesterday}):
+            continue
+        emp_doc = frappe.db.get_value(
+            "Employee", emp,
+            ["employee_name", "is_office_worker"],
+            as_dict=True,
+        ) or {}
+        in_time_str = str(unmatched["time"])
+        try:
+            hhmm = in_time_str.split(" ")[1][:5]
+        except Exception:
+            hhmm = ""
+        elapsed_h = _hours_between(unmatched["time"], ref_dt)
+        if elapsed_h < 12:
+            continue
+        try:
+            doc = frappe.get_doc({
+                "doctype": "Missed Checkout",
+                "employee": emp,
+                "employee_name": emp_doc.get("employee_name") or emp,
+                "is_office_worker": int(bool(emp_doc.get("is_office_worker"))),
+                "date": yesterday,
+                "site_name": unmatched.get("project") or None,
+                "in_time": hhmm,
+                "in_checkin": unmatched["name"],
+                "elapsed_h": elapsed_h,
+                "status": "Unsubmitted",
+            })
+            doc.flags.ignore_permissions = True
+            doc.insert()
+            created += 1
+        except Exception:
+            frappe.log_error(frappe.get_traceback(), "AKG ESS · scan_missed_checkouts")
+    if created:
+        frappe.db.commit()
+    return {"created": created, "date": str(yesterday)}
+
