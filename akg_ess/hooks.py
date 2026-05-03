@@ -13,10 +13,16 @@ app_license = "MIT"
 # The PWA index lives at akg_ess/www/ess/index.html and is reachable at /ess.
 
 # ──────────────────────────────────────────────────────────────────────
-# Install hook — seeds default Activity Types so the Check-out modal
-# isn't empty on a fresh install.  Idempotent — safe to re-run.
+# Install + migrate hooks.
+#   - after_install: seeds default Activity Types on first install.
+#   - after_migrate: re-runs the Module Def + DocType.module healing
+#     pass on every `bench migrate`. Symptom this prevents:
+#     "No module named 'frappe.core.doctype.<...>'" when saving a row
+#     on a site whose stale install left those pointers wrong.
+#     The pass is idempotent — when nothing's broken it's a no-op.
 # ──────────────────────────────────────────────────────────────────────
 after_install = "akg_ess.install.after_install"
+after_migrate = ["akg_ess.install.after_migrate"]
 
 # ──────────────────────────────────────────────────────────────────────
 # Document Events

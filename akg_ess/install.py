@@ -51,6 +51,28 @@ def after_install():
     frappe.db.commit()
 
 
+def after_migrate():
+    """Frappe lifecycle hook — runs at the end of every `bench migrate`.
+
+    Re-applies the Module Def + DocType.module pointers so a site whose
+    install previously half-completed self-heals on the next deploy.
+    Both calls are idempotent: when the values are already correct the
+    pass is a no-op (no DB writes, no log noise). We deliberately skip
+    seed_activity_types here — admins customise the list and we never
+    overwrite their work after the first install.
+    """
+    try:
+        ensure_module_def()
+        fix_doctype_modules()
+        frappe.db.commit()
+    except Exception:
+        # Never block a migrate on a healing pass — log and continue.
+        frappe.log_error(
+            frappe.get_traceback(),
+            "AKG ESS · after_migrate heal failed",
+        )
+
+
 def seed_activity_types():
     """Insert default Activity Types if they don't already exist."""
     created = []
