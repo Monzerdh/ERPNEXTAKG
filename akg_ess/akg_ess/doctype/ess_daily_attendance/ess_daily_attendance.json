@@ -3,6 +3,7 @@
  "autoname": "format:ATT-{employee}-{date}",
  "creation": "2026-05-03 00:00:00.000000",
  "doctype": "DocType",
+ "name": "ESS Daily Attendance",
  "editable_grid": 0,
  "engine": "InnoDB",
  "field_order": [

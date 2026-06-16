@@ -3,6 +3,7 @@
  "autoname": "format:MCO-{YYYY}-{####}",
  "creation": "2026-05-03 00:00:00.000000",
  "doctype": "DocType",
+ "name": "Missed Checkout",
  "editable_grid": 0,
  "engine": "InnoDB",
  "field_order": [
