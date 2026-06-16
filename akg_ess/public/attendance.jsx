@@ -1132,10 +1132,14 @@ function CheckoutModal({ project, activityTypes, sites, onCancel, onConfirm, loa
   const [scope, setScope] = React.useState('');
 
   // Scopes of Work are a global master (not per-project) — load once.
+  // Pre-select the employee's default scope when set and still active;
+  // they can still pick another from the dropdown.
   React.useEffect(() => {
     window.frappe.getScopesOfWork().then((rows) => {
       setScopes(rows);
-      setScope(rows[0]?.name || '');
+      const dflt = window.CURRENT_USER && window.CURRENT_USER.default_scope_of_work;
+      const hasDflt = dflt && rows.some((r) => r.name === dflt);
+      setScope(hasDflt ? dflt : (rows[0]?.name || ''));
     });
   }, []);
 

@@ -25,6 +25,18 @@
  },
  {
   "doctype": "Custom Field",
+  "name": "Employee-default_scope_of_work",
+  "dt": "Employee",
+  "module": "AKG ESS",
+  "fieldname": "default_scope_of_work",
+  "label": "Default Scope of Work",
+  "fieldtype": "Link",
+  "options": "Scope of Work",
+  "insert_after": "has_petty_cash",
+  "description": "Pre-selected in the AKG ESS check-out screen for this employee. They can still pick a different scope at check-out."
+ },
+ {
+  "doctype": "Custom Field",
   "name": "Project-akg_geofence_section",
   "dt": "Project",
   "module": "AKG ESS",

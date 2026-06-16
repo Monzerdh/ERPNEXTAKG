@@ -59,6 +59,7 @@ fixtures = [
             ["name", "in", [
                 "Employee-is_office_worker",
                 "Employee-has_petty_cash",
+                "Employee-default_scope_of_work",
                 "Project-akg_geofence_section",
                 "Project-site_latitude",
                 "Project-site_longitude",
