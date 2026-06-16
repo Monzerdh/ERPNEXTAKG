@@ -34,23 +34,42 @@ def on_status_change(doc, method=None):
         doc.approver = frappe.session.user
         doc.approved_on = frappe.utils.now_datetime()
 
-        checkin = frappe.get_doc({
-            "doctype": "Employee Checkin",
-            "employee": doc.employee,
-            "log_type": doc.log_type,
-            "time": doc.time,
-            "latitude": doc.latitude,
-            "longitude": doc.longitude,
-            "accuracy_m": doc.accuracy_m,
-            "project": doc.selected_project or doc.nearest_site,
-            "device_id": "ESS-MOBILE",
-            "local_id": f"GFV:{doc.name}",
-        })
-        checkin.flags.ignore_permissions = True
-        checkin.insert(ignore_permissions=True)
+        # Single-session model: the client already created the IN/OUT
+        # Employee Checkin at submit time. Reuse it rather than inserting a
+        # duplicate (which the single-daily guard would also reject).
+        day = frappe.utils.getdate(doc.time)
+        existing = frappe.get_all(
+            "Employee Checkin",
+            filters=[
+                ["employee", "=", doc.employee],
+                ["log_type", "=", doc.log_type],
+                ["time", ">=", f"{day} 00:00:00"],
+                ["time", "<=", f"{day} 23:59:59"],
+            ],
+            fields=["name"],
+            limit=1,
+        )
+        if existing:
+            checkin_name = existing[0]["name"]
+        else:
+            checkin = frappe.get_doc({
+                "doctype": "Employee Checkin",
+                "employee": doc.employee,
+                "log_type": doc.log_type,
+                "time": doc.time,
+                "latitude": doc.latitude,
+                "longitude": doc.longitude,
+                "accuracy_m": doc.accuracy_m,
+                "project": doc.selected_project or doc.nearest_site,
+                "device_id": "ESS-MOBILE",
+                "local_id": f"GFV:{doc.name}",
+            })
+            checkin.flags.ignore_permissions = True
+            checkin.insert(ignore_permissions=True)
+            checkin_name = checkin.name
 
-        doc.linked_checkin = checkin.name
-        doc.db_set("linked_checkin", checkin.name, update_modified=False)
+        doc.linked_checkin = checkin_name
+        doc.db_set("linked_checkin", checkin_name, update_modified=False)
         doc.db_set("approver", doc.approver, update_modified=False)
         doc.db_set("approved_on", doc.approved_on, update_modified=False)
 
@@ -59,3 +78,13 @@ def on_status_change(doc, method=None):
             doc.db_set("approver", frappe.session.user, update_modified=False)
         if not doc.approved_on:
             doc.db_set("approved_on", frappe.utils.now_datetime(), update_modified=False)
+
+    # Re-evaluate the day's attendance status whenever a violation changes
+    # (newly filed Pending → hold; Approved/Rejected → release). No-op if no
+    # attendance row exists yet (e.g. an IN-side violation before check-out).
+    if doc.date or doc.time:
+        try:
+            from akg_ess.attendance import refresh_attendance_status
+            refresh_attendance_status(doc.employee, frappe.utils.getdate(doc.date or doc.time))
+        except Exception:
+            frappe.log_error(frappe.get_traceback(), "AKG ESS · geofence refresh attendance")

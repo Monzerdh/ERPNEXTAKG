@@ -37,6 +37,18 @@
  },
  {
   "doctype": "Custom Field",
+  "name": "Employee-has_overtime",
+  "dt": "Employee",
+  "module": "AKG ESS",
+  "fieldname": "has_overtime",
+  "label": "Has Overtime",
+  "fieldtype": "Check",
+  "default": "0",
+  "insert_after": "default_scope_of_work",
+  "description": "When checked, hours worked beyond 10 in a day are recorded as Overtime Hours. When unchecked, hours beyond 10 are degraded (not counted) in the ESS Daily Attendance record."
+ },
+ {
+  "doctype": "Custom Field",
   "name": "Project-akg_geofence_section",
   "dt": "Project",
   "module": "AKG ESS",

@@ -122,6 +122,7 @@ def get_session_profile():
             "company", "cell_number", "date_of_joining", "reports_to",
             "leave_approver", "expense_approver",
             "is_office_worker", "has_petty_cash", "default_scope_of_work",
+            "has_overtime",
         ],
         as_dict=True,
     ) or {}
@@ -179,6 +180,7 @@ def get_session_profile():
         "reports_to_name": reports_to_name or "",
         "is_office_worker": bool(emp.get("is_office_worker")),
         "has_petty_cash": bool(emp.get("has_petty_cash")),
+        "has_overtime": bool(emp.get("has_overtime")),
         "default_scope_of_work": emp.get("default_scope_of_work") or "",
         "leave_approver": leave_approver or None,
         "leave_approver_name": leave_approver_name or "",

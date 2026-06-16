@@ -39,12 +39,13 @@ doc_events = {
     "Missed Checkout": {
         "on_update": "akg_ess.akg_ess.doctype.missed_checkout.missed_checkout.on_status_change",
     },
-    # Office workers (Employee.is_office_worker = 1) are limited to exactly
-    # one IN and one OUT per calendar day.  This hook rejects duplicates
-    # before insert, so retries / the offline outbox can never accidentally
-    # create a second clock-in.
+    # ALL employees are limited to exactly one IN and one OUT per calendar
+    # day (single-session model). before_insert rejects duplicates so
+    # retries / the offline outbox can't create a second clock-in.
+    # after_insert computes the daily attendance record on OUT.
     "Employee Checkin": {
-        "before_insert": "akg_ess.checkin_guards.enforce_office_worker_single_daily",
+        "before_insert": "akg_ess.checkin_guards.enforce_single_daily",
+        "after_insert": "akg_ess.attendance.on_checkin_after_insert",
     },
 }
 
@@ -60,6 +61,7 @@ fixtures = [
                 "Employee-is_office_worker",
                 "Employee-has_petty_cash",
                 "Employee-default_scope_of_work",
+                "Employee-has_overtime",
                 "Project-akg_geofence_section",
                 "Project-site_latitude",
                 "Project-site_longitude",
@@ -96,15 +98,21 @@ fixtures = [
 permission_query_conditions = {
     "ESS Notification": "akg_ess.akg_ess.doctype.ess_notification.ess_notification.get_permission_query_conditions",
     "Missed Checkout":  "akg_ess.akg_ess.doctype.missed_checkout.missed_checkout.get_permission_query_conditions",
+    "ESS Daily Attendance": "akg_ess.akg_ess.doctype.ess_daily_attendance.ess_daily_attendance.get_permission_query_conditions",
 }
 
 # ──────────────────────────────────────────────────────────────────────
-# Scheduler — daily scan for missed check-outs (00:30 site time).
+# Scheduler
+#   00:30 — flag yesterday's missed check-outs
+#   01:00 — mark absentees (no check-in on a working day)
 # ──────────────────────────────────────────────────────────────────────
 scheduler_events = {
     "cron": {
         "30 0 * * *": [
             "akg_ess.api.scan_missed_checkouts",
+        ],
+        "0 1 * * *": [
+            "akg_ess.attendance.mark_absentees",
         ],
     },
 }

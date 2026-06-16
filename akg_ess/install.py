@@ -53,6 +53,7 @@ OUR_DOCTYPES = [
     "Petty Cash Top-up Request",
     "Missed Checkout",
     "Scope of Work",
+    "ESS Daily Attendance",
     "AKG ESS Settings",
 ]
 

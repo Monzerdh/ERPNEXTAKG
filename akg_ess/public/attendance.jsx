@@ -72,6 +72,9 @@ function SiteAttendanceScreen({ geofenceMode, offlineQueue, setOfflineQueue, isO
   const sessions = pairSessions(todays, sites);
   const openSession = sessions.find((s) => !s.out);
   const isCheckedIn = !!openSession;
+  // Single-session model: once today's IN+OUT pair exists and nothing is
+  // open, the day is locked (no second check-in until tomorrow).
+  const dayClosed = !isCheckedIn && sessions.some((s) => s.out);
 
   // Live GPS — refresh on mount and every 30s. Components render a neutral
   // "locating…" state while myPos is null.
@@ -138,10 +141,14 @@ function SiteAttendanceScreen({ geofenceMode, offlineQueue, setOfflineQueue, isO
 
   const onConfirmCheckOut = async ({ activity_type, scope_of_work }) => {
     setActing(true);
+    // Record the project at the CURRENT location for the OUT row. If the
+    // engineer checked in at site A and is now at site B, this captures B
+    // so the daily attendance record can split the hours across both.
+    const outProject = (match.inside && match.site) ? match.site.name : openSession.project;
     const payload = {
       log_type: 'OUT',
       latitude: myPos.lat, longitude: myPos.lng,
-      project: openSession.project, accuracy: myPos.accuracy,
+      project: outProject, accuracy: myPos.accuracy,
       activity_type, scope_of_work,
     };
     if (isOffline) {
@@ -300,25 +307,40 @@ function SiteAttendanceScreen({ geofenceMode, offlineQueue, setOfflineQueue, isO
       <MissedCheckoutBanner />
 
 
-      {/* Big check-in/out button — single CTA copy split into label + sub */}
+      {/* Big check-in/out button — single CTA copy split into label + sub.
+          Once the day's single IN+OUT pair is complete, the button is
+          replaced by a locked 'done for today' card. */}
       <div style={{ marginTop: 14 }}>
-        <button
-          className={`checkin-button ${isCheckedIn ? 'out' : 'in'}`}
-          onClick={isCheckedIn ? onRequestCheckOut : onCheckIn}
-          disabled={acting}
-        >
-          {acting ? <span className="spinner" /> : <Icon name={isCheckedIn ? 'logout' : 'check'} size={26} />}
-          <span className="checkin-button-label">
-            {isCheckedIn ? t.cta_check_out : t.cta_check_in}
-          </span>
-          <span className="checkin-button-sub truncate">
-            {isCheckedIn
-              ? `${fmtTime(openSession.in.time)} · ${sessions.find((s) => s.project === openSession.project)?.siteName || ''}`
-              : (firstIn
-                  ? `${t.checked_out_at} ${fmtTime(lastOut?.time)}`
-                  : (match.inside ? t.cta_check_in_sub : t.log_violation))}
-          </span>
-        </button>
+        {dayClosed ? (
+          <div className="office-done-card">
+            <div className="office-done-icon">
+              <Icon name="check" size={22} />
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div className="office-done-title">{t.day_complete_title}</div>
+              <div className="office-done-sub">
+                {fmtTime(firstIn?.time)} → {fmtTime(lastOut?.time)} · {(totalRaw / 60).toFixed(1)}h · {t.day_complete_sub}
+              </div>
+            </div>
+            <Icon name="shield" size={18} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+          </div>
+        ) : (
+          <button
+            className={`checkin-button ${isCheckedIn ? 'out' : 'in'}`}
+            onClick={isCheckedIn ? onRequestCheckOut : onCheckIn}
+            disabled={acting}
+          >
+            {acting ? <span className="spinner" /> : <Icon name={isCheckedIn ? 'logout' : 'check'} size={26} />}
+            <span className="checkin-button-label">
+              {isCheckedIn ? t.cta_check_out : t.cta_check_in}
+            </span>
+            <span className="checkin-button-sub truncate">
+              {isCheckedIn
+                ? `${fmtTime(openSession.in.time)} · ${sessions.find((s) => s.project === openSession.project)?.siteName || ''}`
+                : (match.inside ? t.cta_check_in_sub : t.log_violation)}
+            </span>
+          </button>
+        )}
       </div>
 
       {/* Today summary */}
