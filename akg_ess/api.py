@@ -590,6 +590,26 @@ def submit_missed_checkout(name, proposed_out_time, reason=""):
     doc.submitted_on = now_datetime()
     doc.flags.ignore_permissions = True
     doc.save()
+
+    # Surface the day in the attendance report as Pending Approval while it
+    # awaits the manager. It flips to Present only once approved (the OUT
+    # check-in is created then and recomputes the row).
+    try:
+        from akg_ess.attendance import upsert_missed_pending
+        in_checkin = doc.in_checkin
+        in_time = frappe.db.get_value("Employee Checkin", in_checkin, "time") if in_checkin else None
+        upsert_missed_pending(
+            employee=doc.employee,
+            day=doc.date,
+            in_time=in_time,
+            in_project=doc.site_name,
+            in_checkin=in_checkin,
+            proposed_out_time=doc.proposed_out_time,
+            out_project=doc.site_name,
+        )
+    except Exception:
+        frappe.log_error(frappe.get_traceback(), "AKG ESS · missed pending attendance")
+
     return _serialize_mc(doc.as_dict())
 
 
