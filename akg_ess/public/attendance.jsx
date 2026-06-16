@@ -1510,7 +1510,12 @@ function WeeklyTimesheet({ checkins, sites }) {
 function OutsideZonePopup({ ctx, sites, onCancel, onSubmit, loading }) {
   const t = useT();
   const isIn = ctx.type === 'IN';
-  const [project, setProject] = React.useState(ctx.defaultProject || ctx.nearest?.name || sites[0]?.name || '');
+  // Off-zone work may be on ANY project, not just the engineer's geofenced
+  // sites — list every active Project so they can pick the right one before
+  // submitting for approval. Falls back to the geofenced sites if the full
+  // list hasn't hydrated yet.
+  const projectOptions = (window.PROJECTS && window.PROJECTS.length) ? window.PROJECTS : sites;
+  const [project, setProject] = React.useState(ctx.defaultProject || ctx.nearest?.name || '');
   const [reason, setReason] = React.useState('');
 
   React.useEffect(() => {
@@ -1581,13 +1586,14 @@ function OutsideZonePopup({ ctx, sites, onCancel, onSubmit, loading }) {
             </span>
           </div>
 
-          {/* Project picker */}
+          {/* Project picker — all active projects in the system */}
           <div style={{ marginTop: 16 }}>
             <label className="field-label">{t.select_project} *</label>
             <select className="select" value={project} onChange={(e) => setProject(e.target.value)} disabled={loading}>
-              {sites.map((s) => (
+              <option value="">{t.select_project_ph}</option>
+              {projectOptions.map((s) => (
                 <option key={s.name} value={s.name}>
-                  {s.project_name} · {s.name}
+                  {s.project_name || s.name}
                 </option>
               ))}
             </select>
