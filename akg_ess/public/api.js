@@ -264,13 +264,13 @@
       if (toDate)   filters.push(['time', '<=', toDate]);
       return listResource('Employee Checkin', {
         filters,
-        fields: ['name', 'log_type', 'time', 'latitude', 'longitude', 'accuracy_m', 'project', 'device_id'],
+        fields: ['name', 'log_type', 'time', 'latitude', 'longitude', 'accuracy_m', 'project', 'activity_type', 'scope_of_work', 'device_id'],
         orderBy: 'time desc',
         limit,
       });
     },
 
-    async createCheckin({ log_type, latitude, longitude, project, accuracy, time, _localId }) {
+    async createCheckin({ log_type, latitude, longitude, project, accuracy, time, activity_type, scope_of_work, _localId }) {
       const u = await loadCurrentUser();
       return insertResource('Employee Checkin', {
         employee: u.employee,
@@ -279,6 +279,10 @@
         latitude, longitude,
         accuracy_m: accuracy,
         project: project || null,
+        // OUT rows carry the engineer's check-out selections. Persisted
+        // via custom fields on Employee Checkin (see fixtures).
+        activity_type: activity_type || null,
+        scope_of_work: scope_of_work || null,
         device_id: 'ESS-MOBILE',
         local_id: _localId || localId(),
       });
@@ -295,6 +299,13 @@
     async getProjectTasks(project) {
       // Same rationale as getActivityTypes — Task requires Projects User.
       const r = await callMethod('akg_ess.api.get_project_tasks', { project: project || null }).catch(() => []);
+      return Array.isArray(r) ? r : [];
+    },
+
+    async getScopesOfWork() {
+      // Custom 'Scope of Work' master — read via whitelisted method so
+      // ESS-only users (no desk role) get the list at check-out.
+      const r = await callMethod('akg_ess.api.get_scopes_of_work').catch(() => []);
       return Array.isArray(r) ? r : [];
     },
 

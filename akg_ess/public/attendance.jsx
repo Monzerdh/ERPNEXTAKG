@@ -136,13 +136,13 @@ function SiteAttendanceScreen({ geofenceMode, offlineQueue, setOfflineQueue, isO
     setCheckoutModal({ project: openSession.project, session: openSession });
   };
 
-  const onConfirmCheckOut = async ({ activity_type, task }) => {
+  const onConfirmCheckOut = async ({ activity_type, scope_of_work }) => {
     setActing(true);
     const payload = {
       log_type: 'OUT',
       latitude: myPos.lat, longitude: myPos.lng,
       project: openSession.project, accuracy: myPos.accuracy,
-      activity_type, task,
+      activity_type, scope_of_work,
     };
     if (isOffline) {
       setOfflineQueue((q) => [...q, { ...payload, _kind: 'checkin', queued_at: new Date().toISOString() }]);
@@ -865,11 +865,11 @@ function pairSessions(events, sites) {
   for (const e of events) {
     if (e.log_type === 'IN') {
       if (cur) sessions.push(cur);
-      cur = { in: e, out: null, project: e.project, activity_type: null, task: null };
+      cur = { in: e, out: null, project: e.project, activity_type: null, scope_of_work: null };
     } else if (e.log_type === 'OUT' && cur) {
       cur.out = e;
       cur.activity_type = e.activity_type;
-      cur.task = e.task;
+      cur.scope_of_work = e.scope_of_work;
       cur.duration_min = Math.max(0, Math.round((+new Date(e.time.replace(' ', 'T')) - +new Date(cur.in.time.replace(' ', 'T'))) / 60000));
       sessions.push(cur);
       cur = null;
@@ -908,7 +908,7 @@ function TodaySessions({ sessions }) {
               </div>
               <div className="list-row-meta">
                 <div className="list-row-amount tabular">{(s.duration_min / 60).toFixed(1)}h</div>
-                {s.task && <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{s.task}</div>}
+                {s.scope_of_work && <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{s.scope_of_work}</div>}
               </div>
             </div>
           ))}
@@ -1102,7 +1102,7 @@ function TimesheetPreview({ sessions, sites, holdStatus }) {
                 {r.siteName || <span style={{ color: 'var(--warn)' }}>{t.unassigned_outside}</span>}
               </div>
               <div className="truncate" style={{ fontSize: 10, color: 'var(--text-muted)' }}>
-                {[r.activity_type, r.task].filter(Boolean).join(' · ')}
+                {[r.activity_type, r.scope_of_work].filter(Boolean).join(' · ')}
                 {r.travel_min > 0 && <span style={{ color: 'var(--navy-700)' }}> · +{Math.round(r.travel_min)}{t.travel_minutes}</span>}
               </div>
             </div>
@@ -1123,21 +1123,21 @@ function TimesheetPreview({ sessions, sites, holdStatus }) {
   );
 }
 
-// ─── Check-out popup with Activity Type + Task ─────────────────────────
+// ─── Check-out popup with Activity Type + Scope of Work ────────────────
 function CheckoutModal({ project, activityTypes, sites, onCancel, onConfirm, loading }) {
   const t = useT();
   const site = sites.find((s) => s.name === project);
-  const [tasks, setTasks] = React.useState([]);
+  const [scopes, setScopes] = React.useState([]);
   const [activity, setActivity] = React.useState('Execution');
-  const [task, setTask] = React.useState('');
+  const [scope, setScope] = React.useState('');
 
+  // Scopes of Work are a global master (not per-project) — load once.
   React.useEffect(() => {
-    if (!project) { setTasks([]); return; }
-    window.frappe.getProjectTasks(project).then((rows) => {
-      setTasks(rows);
-      setTask(rows[0]?.name || '');
+    window.frappe.getScopesOfWork().then((rows) => {
+      setScopes(rows);
+      setScope(rows[0]?.name || '');
     });
-  }, [project]);
+  }, []);
 
   // Close on Escape
   React.useEffect(() => {
@@ -1200,15 +1200,17 @@ function CheckoutModal({ project, activityTypes, sites, onCancel, onConfirm, loa
           </div>
 
           <div style={{ marginTop: 14 }}>
-            <label className="field-label">{t.task}</label>
-            {tasks.length === 0 ? (
-              <div className="empty-inline">{t.no_tasks}</div>
+            <label className="field-label">{t.scope_of_work}</label>
+            {scopes.length === 0 ? (
+              <div className="empty-inline" style={{ fontSize: 12, color: 'var(--text-muted)', padding: '10px 12px', background: 'var(--ink-50)', borderRadius: 8, lineHeight: 1.4 }}>
+                {t.no_scopes}
+                {' '}<a href="/app/scope-of-work/new" target="_blank" rel="noopener" style={{ color: 'var(--brand)', textDecoration: 'underline' }}>Setup → Scope of Work</a>.
+              </div>
             ) : (
-              <select className="select" value={task} onChange={(e) => setTask(e.target.value)}>
-                {tasks.map((tk) => (
-                  <option key={tk.name} value={tk.name}>
-                    {tk.subject} · {tk.name}
-                  </option>
+              <select className="select" value={scope} onChange={(e) => setScope(e.target.value)}>
+                <option value="">{t.select_scope}</option>
+                {scopes.map((sc) => (
+                  <option key={sc.name} value={sc.name}>{sc.scope_name || sc.name}</option>
                 ))}
               </select>
             )}
@@ -1216,7 +1218,7 @@ function CheckoutModal({ project, activityTypes, sites, onCancel, onConfirm, loa
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.3fr', gap: 10, marginTop: 22 }}>
             <button className="btn btn-ghost" onClick={onCancel} disabled={loading}>{t.cancel}</button>
-            <button className="btn btn-primary" onClick={() => onConfirm({ activity_type: activity, task })} disabled={loading}>
+            <button className="btn btn-primary" onClick={() => onConfirm({ activity_type: activity, scope_of_work: scope })} disabled={loading}>
               {loading ? <span className="spinner" /> : <Icon name="logout" size={16} />}
               {t.confirm_check_out}
             </button>

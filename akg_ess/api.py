@@ -213,6 +213,27 @@ def get_activity_types():
 
 
 @frappe.whitelist()
+def get_scopes_of_work():
+    """Return all enabled Scopes of Work for the check-out picker.
+
+    Read with ignore_permissions=True for signed-in users so ESS staff
+    (who only hold the Employee / ESS User role) still get the list."""
+    if not frappe.session.user or frappe.session.user == "Guest":
+        frappe.local.response.http_status_code = 401
+        return []
+    if not frappe.db.exists("DocType", "Scope of Work"):
+        return []
+    return frappe.db.get_list(
+        "Scope of Work",
+        filters={"disabled": 0},
+        fields=["name", "scope_name", "description"],
+        order_by="scope_name asc",
+        ignore_permissions=True,
+        limit_page_length=0,
+    )
+
+
+@frappe.whitelist()
 def get_project_tasks(project=None):
     """Return open/working Tasks, optionally scoped to one project.
 

@@ -65,6 +65,8 @@ fixtures = [
                 "Project-site_radius_meters",
                 "Employee Checkin-accuracy_m",
                 "Employee Checkin-project",
+                "Employee Checkin-activity_type",
+                "Employee Checkin-scope_of_work",
                 "Employee Checkin-local_id",
                 "Leave Application-local_id",
                 "Expense Claim-local_id",

@@ -95,6 +95,30 @@
  },
  {
   "doctype": "Custom Field",
+  "name": "Employee Checkin-activity_type",
+  "dt": "Employee Checkin",
+  "module": "AKG ESS",
+  "fieldname": "activity_type",
+  "label": "Activity Type",
+  "fieldtype": "Link",
+  "options": "Activity Type",
+  "insert_after": "project",
+  "description": "Activity selected at check-out (OUT rows only)."
+ },
+ {
+  "doctype": "Custom Field",
+  "name": "Employee Checkin-scope_of_work",
+  "dt": "Employee Checkin",
+  "module": "AKG ESS",
+  "fieldname": "scope_of_work",
+  "label": "Scope of Work",
+  "fieldtype": "Link",
+  "options": "Scope of Work",
+  "insert_after": "activity_type",
+  "description": "Scope of Work selected at check-out (OUT rows only)."
+ },
+ {
+  "doctype": "Custom Field",
   "name": "Employee Checkin-local_id",
   "dt": "Employee Checkin",
   "module": "AKG ESS",
@@ -102,7 +126,7 @@
   "label": "Client Local ID",
   "fieldtype": "Data",
   "unique": 1,
-  "insert_after": "project",
+  "insert_after": "scope_of_work",
   "description": "Idempotency key from the offline outbox. Prevents duplicate posts on retry."
  },
 

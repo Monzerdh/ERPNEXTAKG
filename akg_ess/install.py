@@ -33,6 +33,18 @@ DEFAULT_ACTIVITY_TYPES = [
     {"name": "Meeting",         "billable": 0},
 ]
 
+# Default Scopes of Work for AKG Contracting check-out. Created only if
+# absent — never overwrites the admin's customised list.
+DEFAULT_SCOPES_OF_WORK = [
+    "Civil Works",
+    "MEP Installation",
+    "Finishing",
+    "Snagging & Handover",
+    "Maintenance",
+    "Site Survey",
+    "Material Handling",
+]
+
 OUR_MODULE = "AKG ESS"
 OUR_APP = "akg_ess"
 OUR_DOCTYPES = [
@@ -40,6 +52,7 @@ OUR_DOCTYPES = [
     "ESS Notification",
     "Petty Cash Top-up Request",
     "Missed Checkout",
+    "Scope of Work",
     "AKG ESS Settings",
 ]
 
@@ -49,6 +62,7 @@ def after_install():
     ensure_module_def()
     fix_doctype_modules()
     seed_activity_types()
+    seed_scopes_of_work()
     frappe.db.commit()
 
 
@@ -88,6 +102,23 @@ def seed_activity_types():
         })
         doc.insert(ignore_permissions=True, ignore_if_duplicate=True)
         created.append(at["name"])
+    return created
+
+
+def seed_scopes_of_work():
+    """Insert default Scopes of Work if they don't already exist."""
+    created = []
+    if not frappe.db.exists("DocType", "Scope of Work"):
+        return created
+    for name in DEFAULT_SCOPES_OF_WORK:
+        if frappe.db.exists("Scope of Work", name):
+            continue
+        doc = frappe.get_doc({
+            "doctype": "Scope of Work",
+            "scope_name": name,
+        })
+        doc.insert(ignore_permissions=True, ignore_if_duplicate=True)
+        created.append(name)
     return created
 
 
@@ -147,9 +178,11 @@ def setup_defaults():
     module_status = ensure_module_def()
     doctypes_fixed = fix_doctype_modules()
     activity_types = seed_activity_types()
+    scopes = seed_scopes_of_work()
     frappe.db.commit()
     return {
         "module_def": module_status,
         "doctype_modules_fixed": doctypes_fixed,
         "created_activity_types": activity_types,
+        "created_scopes_of_work": scopes,
     }
