@@ -788,6 +788,9 @@ input, textarea, select { font-family: inherit; font-size: inherit; }
 .cal-pending .cal-num { color: white; }
 .cal-absent   { background: var(--bad);   border-color: var(--bad); }
 .cal-absent .cal-num { color: white; }
+.cal-missed   { background: #9333EA;       border-color: #9333EA; }
+.cal-missed .cal-num { color: white; }
+.cal-missed .cal-tag { color: white; }
 .cal-leave    { background: #6366F1; border-color: #6366F1; }
 .cal-leave .cal-num { color: white; }
 .cal-weekend  { background: repeating-linear-gradient(135deg, var(--ink-100), var(--ink-100) 4px, var(--surface-2) 4px, var(--surface-2) 8px); color: var(--text-muted); }

@@ -30,7 +30,7 @@
   {"fieldname": "employee_name",      "fieldtype": "Data",   "label": "Employee Name", "fetch_from": "employee.employee_name", "read_only": 1, "in_list_view": 1},
   {"fieldname": "date",               "fieldtype": "Date",   "label": "Date", "reqd": 1, "in_standard_filter": 1, "in_list_view": 1, "search_index": 1},
   {"fieldname": "column_break_1",     "fieldtype": "Column Break"},
-  {"fieldname": "status",             "fieldtype": "Select", "options": "Present\nAbsent\nPending Approval", "default": "Present", "label": "Status", "in_standard_filter": 1, "in_list_view": 1},
+  {"fieldname": "status",             "fieldtype": "Select", "options": "Present\nAbsent\nPending Approval\nChecked In\nMissed Checkout", "default": "Present", "label": "Status", "in_standard_filter": 1, "in_list_view": 1},
   {"fieldname": "scope",              "fieldtype": "Link",   "options": "Scope of Work", "label": "Scope"},
 
   {"fieldname": "section_times",      "fieldtype": "Section Break", "label": "Times"},

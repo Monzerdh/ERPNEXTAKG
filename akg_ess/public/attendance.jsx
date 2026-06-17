@@ -113,15 +113,27 @@ function SiteAttendanceScreen({ geofenceMode, offlineQueue, setOfflineQueue, isO
   };
 
   const onConfirmCheckOut = async ({ scope_of_work }) => {
+    // Off-zone check-out: hold everything. Don't create the OUT checkin —
+    // open the violation popup (carrying the chosen scope). Nothing posts
+    // to the system until the manager approves; approval then creates the
+    // OUT checkin → ESS Daily Attendance + HR Attendance.
+    if (!match.inside) {
+      setCheckoutModal(null);
+      setOutsideZoneModal({
+        type: 'OUT',
+        distance: match.distance,
+        nearest: match.site,
+        scope_of_work,
+        defaultProject: openSession?.project || match.site?.name,
+      });
+      return;
+    }
+
     setActing(true);
-    // Record the project at the CURRENT location for the OUT row. If the
-    // engineer checked in at site A and is now at site B, this captures B
-    // so the daily attendance record can split the hours across both.
-    const outProject = (match.inside && match.site) ? match.site.name : openSession.project;
     const payload = {
       log_type: 'OUT',
       latitude: myPos.lat, longitude: myPos.lng,
-      project: outProject, accuracy: myPos.accuracy,
+      project: match.site.name, accuracy: myPos.accuracy,
       scope_of_work,
     };
     if (isOffline) {
@@ -135,20 +147,6 @@ function SiteAttendanceScreen({ geofenceMode, offlineQueue, setOfflineQueue, isO
       const row = await window.frappe.createCheckin(payload);
       setCheckins((c) => [row, ...c]);
       setCheckoutModal(null);
-      // If we're outside any zone, immediately open the violation popup to log it
-      if (!match.inside) {
-        setActing(false);
-        setOutsideZoneModal({
-          type: 'OUT',
-          distance: match.distance,
-          nearest: match.site,
-          checkin: row.name,
-          // pre-fill project with whatever the open session had
-          defaultProject: openSession?.project || match.site?.name,
-        });
-        toast(`${t.check_out} ✓`, 'ok');
-        return;
-      }
       toast(`${t.check_out} ✓`, 'ok');
     } catch (e) {
       if (window.frappe.isNetworkError && window.frappe.isNetworkError(e)) {
@@ -164,36 +162,27 @@ function SiteAttendanceScreen({ geofenceMode, offlineQueue, setOfflineQueue, isO
     }
   };
 
-  // Submit a geofence violation tied to the just-created (or about-to-create) check-in.
+  // Off-zone IN/OUT: file a Geofence Violation only. NOTHING is posted to
+  // the system (no Employee Checkin, no attendance) until a manager
+  // approves — approval creates the checkin which then posts attendance.
   const onSubmitViolation = async ({ selected_project, reason }) => {
     setActing(true);
     const ctx = outsideZoneModal;
     try {
-      let checkinName = ctx.checkin;
-      // For check-IN flow we still need to create the checkin row first (no project)
-      if (ctx.type === 'IN') {
-        const payload = {
-          log_type: 'IN',
-          latitude: myPos.lat, longitude: myPos.lng,
-          project: selected_project, accuracy: myPos.accuracy,
-        };
-        const row = await window.frappe.createCheckin(payload);
-        setCheckins((c) => [row, ...c]);
-        checkinName = row.name;
-      }
       await window.frappe.createViolation({
         log_type: ctx.type,
         distance_m: ctx.distance,
         nearest_site: ctx.nearest?.name,
-        selected_project, reason,
+        selected_project,
+        scope_of_work: ctx.scope_of_work || null,
+        reason,
         actual_lat: myPos.lat, actual_lng: myPos.lng,
-        checkin: checkinName,
       });
-      // refresh hold-status
+      // refresh hold-status for the timesheet preview
       const today = new Date().toISOString().slice(0, 10);
       const hs = await window.frappe.getDayHoldStatus(window.CURRENT_USER.employee, today);
       setHoldStatus(hs);
-      toast(ctx.type === 'IN' ? `${t.check_in} ✓ · ${t.pending_review}` : t.pending_review, 'warn');
+      toast(t.pending_review, 'warn');
       setOutsideZoneModal(null);
     } catch (e) {
       toast(e.message || 'Failed', 'bad');
@@ -291,6 +280,17 @@ function SiteAttendanceScreen({ geofenceMode, offlineQueue, setOfflineQueue, isO
               </div>
             </div>
             <Icon name="shield" size={18} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+          </div>
+        ) : holdStatus === 'pending' ? (
+          <div className="office-done-card" style={{ background: 'var(--warn-100)', borderColor: 'var(--warn)' }}>
+            <div className="office-done-icon" style={{ background: 'var(--warn)', color: 'white' }}>
+              <Icon name="clock" size={22} />
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div className="office-done-title" style={{ color: 'var(--warn)' }}>{t.pending_review}</div>
+              <div className="office-done-sub">{t.pending_action_sub}</div>
+            </div>
+            <Icon name="warn" size={18} style={{ color: 'var(--warn)', flexShrink: 0 }} />
           </div>
         ) : (
           <button

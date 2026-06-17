@@ -52,6 +52,10 @@ def on_status_change(doc, method=None):
         if existing:
             checkin_name = existing[0]["name"]
         else:
+            # Off-zone model: nothing was posted at submit. Create the
+            # Employee Checkin now — its after_insert hook populates ESS
+            # Daily Attendance (IN -> Checked In, OUT -> Present + HR
+            # Attendance). scope_of_work is carried for OUT rows.
             checkin = frappe.get_doc({
                 "doctype": "Employee Checkin",
                 "employee": doc.employee,
@@ -61,6 +65,7 @@ def on_status_change(doc, method=None):
                 "longitude": doc.longitude,
                 "accuracy_m": doc.accuracy_m,
                 "project": doc.selected_project or doc.nearest_site,
+                "scope_of_work": doc.get("scope_of_work") or None,
                 "device_id": "ESS-MOBILE",
                 "skip_auto_attendance": 1,
                 "local_id": f"GFV:{doc.name}",
@@ -79,13 +84,3 @@ def on_status_change(doc, method=None):
             doc.db_set("approver", frappe.session.user, update_modified=False)
         if not doc.approved_on:
             doc.db_set("approved_on", frappe.utils.now_datetime(), update_modified=False)
-
-    # Re-evaluate the day's attendance status whenever a violation changes
-    # (newly filed Pending → hold; Approved/Rejected → release). No-op if no
-    # attendance row exists yet (e.g. an IN-side violation before check-out).
-    if doc.date or doc.time:
-        try:
-            from akg_ess.attendance import refresh_attendance_status
-            refresh_attendance_status(doc.employee, frappe.utils.getdate(doc.date or doc.time))
-        except Exception:
-            frappe.log_error(frappe.get_traceback(), "AKG ESS · geofence refresh attendance")

@@ -153,6 +153,7 @@ function MonthlyReport({ role, onBack }) {
                   <div className="cal-num">{d.day}</div>
                   {d.status === 'present' && <div className="cal-hrs tabular">{d.hours.toFixed(1)}h</div>}
                   {d.status === 'pending' && <div className="cal-hrs tabular">{d.hours.toFixed(1)}h</div>}
+                  {d.status === 'missed' && <div className="cal-tag">MC</div>}
                   {d.status === 'absent' && <div className="cal-tag">A</div>}
                   {d.status === 'leave' && <div className="cal-tag">L</div>}
                 </button>
@@ -163,6 +164,7 @@ function MonthlyReport({ role, onBack }) {
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 14, fontSize: 11, color: 'var(--text-muted)' }}>
               <LegendDot color="var(--ok)" label={`${t.present} (${data.summary.present_days - data.summary.pending_days})`} />
               <LegendDot color="var(--warn)" label={`${t.pending_approval} (${data.summary.pending_days})`} />
+              <LegendDot color="#9333EA" label={`${t.missed_checkout} (${data.summary.missed_days || 0})`} />
               <LegendDot color="var(--bad)" label={`${t.absent} (${data.summary.absent_days})`} />
               <LegendDot color="#6366F1" label={`${t.leave} (${data.summary.leave_days})`} />
               <LegendDot color="var(--ink-300)" label={t.weekend} />
@@ -179,8 +181,8 @@ function MonthlyReport({ role, onBack }) {
                   </div>
                   <div className="muted" style={{ fontSize: 11 }}>{selected.date}</div>
                 </div>
-                <span className={`chip chip-dot chip-${selected.status === 'present' ? 'ok' : selected.status === 'pending' ? 'warn' : selected.status === 'leave' ? 'info' : 'bad'}`}>
-                  {selected.status === 'present' ? t.status_present : selected.status === 'pending' ? t.pending_approval : selected.status === 'leave' ? t.status_on_leave : t.status_absent}
+                <span className={`chip chip-dot chip-${selected.status === 'present' ? 'ok' : (selected.status === 'pending' || selected.status === 'missed') ? 'warn' : selected.status === 'leave' ? 'info' : 'bad'}`}>
+                  {selected.status === 'present' ? t.status_present : selected.status === 'pending' ? t.pending_approval : selected.status === 'missed' ? t.missed_checkout : selected.status === 'leave' ? t.status_on_leave : t.status_absent}
                 </span>
               </div>
               {(selected.status === 'present' || selected.status === 'pending') && (
@@ -197,6 +199,11 @@ function MonthlyReport({ role, onBack }) {
                     <div className="stat-label">{t.sessions}</div>
                     <div className="stat-value" style={{ fontSize: 18 }}>{selected.sessions}</div>
                   </div>
+                </div>
+              )}
+              {selected.status === 'missed' && (
+                <div className="empty-inline" style={{ color: 'var(--warn)' }}>
+                  {t.missed_checkout_hint} {selected.inTime ? `· ${t.first_in}: ${selected.inTime}` : ''}
                 </div>
               )}
               {selected.status === 'absent' && (

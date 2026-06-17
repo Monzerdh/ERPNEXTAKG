@@ -346,7 +346,7 @@
       }).catch(() => []);
     },
 
-    async createViolation({ log_type, distance_m, nearest_site, selected_project, reason, actual_lat, actual_lng, accuracy, _localId }) {
+    async createViolation({ log_type, distance_m, nearest_site, selected_project, scope_of_work, reason, actual_lat, actual_lng, accuracy, _localId }) {
       const u = await loadCurrentUser();
       return insertResource('Geofence Violation', {
         employee: u.employee,
@@ -358,6 +358,7 @@
         accuracy_m: accuracy,
         distance_m,
         nearest_site, selected_project,
+        scope_of_work: scope_of_work || null,
         reason,
         status: 'Pending',
         local_id: _localId || localId(),
@@ -991,7 +992,7 @@
     const todayStr = new Date().toISOString().slice(0, 10);
     const last = new Date(year, month, 0).getDate();
     const days = [];
-    let workDays = 0, presentDays = 0, totalMin = 0, lateDays = 0, pendingDays = 0;
+    let workDays = 0, presentDays = 0, totalMin = 0, lateDays = 0, pendingDays = 0, missedDays = 0;
 
     const violationByDate = {};
     for (const v of violations) {
@@ -1000,7 +1001,10 @@
     }
     // Authoritative attendance rows keyed by date. Maps the DocType status
     // to the calendar's status vocabulary.
-    const STATUS_MAP = { 'Present': 'present', 'Pending Approval': 'pending', 'Absent': 'absent' };
+    const STATUS_MAP = {
+      'Present': 'present', 'Pending Approval': 'pending', 'Absent': 'absent',
+      'Checked In': 'present', 'Missed Checkout': 'missed',
+    };
     const attByDate = {};
     for (const a of (attendance || [])) {
       const k = (a.date || '').slice(0, 10);
@@ -1037,13 +1041,18 @@
 
       if (isFuture) status = 'future';
       else if (att) {
-        // Authoritative server-computed status wins (Present / Pending
-        // Approval / Absent). Hours come straight off the attendance row.
+        // Authoritative server-computed status wins. 'Checked In' means an
+        // open day: still in progress today, but a missed check-out once
+        // the day is in the past.
         status = STATUS_MAP[att.status] || 'present';
+        if (att.status === 'Checked In' && iso < todayStr) status = 'missed';
         hours = Math.round((parseFloat(att.total_hours) || 0) * 10) / 10;
         if (att.check_in_time) inTime = String(att.check_in_time).slice(11, 16);
         if (status === 'absent') {
           workDays++;
+        } else if (status === 'missed') {
+          workDays++;
+          missedDays++;
         } else {
           presentDays++;
           workDays++;
@@ -1094,6 +1103,7 @@
         leave_days: days.filter((x) => x.status === 'leave').length,
         late_days: lateDays,
         pending_days: pendingDays,
+        missed_days: missedDays,
         total_hours: Math.round((totalMin / 60) * 10) / 10,
         avg_hours: presentDays ? Math.round((totalMin / 60 / presentDays) * 10) / 10 : 0,
         attendance_pct: workDays ? Math.round((presentDays / workDays) * 100) : 0,

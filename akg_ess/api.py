@@ -709,6 +709,13 @@ def scan_missed_checkouts():
             })
             doc.flags.ignore_permissions = True
             doc.insert()
+            # Flag the day's ESS Daily Attendance row (opened on check-in)
+            # as Missed Checkout so the monthly report shows it as such.
+            att = frappe.db.get_value(
+                "ESS Daily Attendance", {"employee": emp, "date": yesterday}, "name"
+            )
+            if att:
+                frappe.db.set_value("ESS Daily Attendance", att, "status", "Missed Checkout")
             created += 1
         except Exception:
             frappe.log_error(frappe.get_traceback(), "AKG ESS · scan_missed_checkouts")

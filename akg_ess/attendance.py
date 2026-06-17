@@ -21,15 +21,46 @@ OVERTIME_THRESHOLD_HOURS = 10.0
 
 
 def on_checkin_after_insert(doc, method=None):
-    """Employee Checkin after_insert hook. Only OUT rows trigger the
-    daily attendance computation."""
+    """Employee Checkin after_insert hook.
+       IN  -> populate ESS Daily Attendance as 'Checked In' (no HR yet).
+       OUT -> compute Present + post HR Attendance.
+    Off-zone check-ins never reach here until approved (they're held in a
+    Geofence Violation), so any checkin that exists is in-zone or approved.
+    """
     try:
-        if (doc.log_type or "").upper() != "OUT":
-            return
-        compute_daily_attendance(doc)
+        lt = (doc.log_type or "").upper()
+        if lt == "IN":
+            record_checkin_in(doc)
+        elif lt == "OUT":
+            compute_daily_attendance(doc)
     except Exception:
-        # Never block a check-out on attendance computation — log + move on.
+        # Never block a check-in/out on attendance bookkeeping — log + move on.
         frappe.log_error(frappe.get_traceback(), "AKG ESS · on_checkin_after_insert")
+
+
+def record_checkin_in(in_doc):
+    """On check-IN, open the day's ESS Daily Attendance row as 'Checked In'
+    (in progress). No HR Attendance yet — that waits for check-out."""
+    from frappe.utils import getdate
+    if not in_doc.employee or not in_doc.time:
+        return
+    day = getdate(in_doc.time)
+    existing = frappe.db.get_value(
+        "ESS Daily Attendance", {"employee": in_doc.employee, "date": day},
+        ["name", "status"], as_dict=True,
+    )
+    # Don't downgrade a day that already has a check-out / decision.
+    if existing and existing.status in ("Present", "Pending Approval", "Missed Checkout"):
+        return
+    values = {
+        "employee": in_doc.employee,
+        "date": day,
+        "status": "Checked In",
+        "check_in_time": in_doc.time,
+        "check_in_project": in_doc.project,
+        "in_checkin": in_doc.name,
+    }
+    _upsert_attendance(in_doc.employee, day, values)
 
 
 def _day_has_pending_hold(employee, day):
