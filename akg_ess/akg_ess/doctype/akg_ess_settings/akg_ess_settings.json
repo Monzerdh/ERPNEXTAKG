@@ -17,6 +17,8 @@
   "default_vat_rate",
   "petty_column_break",
   "default_vat_description",
+  "attendance_section",
+  "auto_create_attendance",
   "geofence_section",
   "default_radius_meters",
   "version_section",
@@ -35,6 +37,9 @@
   {"fieldname": "default_vat_rate", "fieldtype": "Float", "label": "Default VAT rate (%)", "default": "5", "description": "UAE standard rate is 5%."},
   {"fieldname": "petty_column_break", "fieldtype": "Column Break"},
   {"fieldname": "default_vat_description", "fieldtype": "Data", "label": "Default VAT description", "default": "VAT 5%", "description": "Shown in the Taxes & Charges row description column."},
+
+  {"fieldname": "attendance_section", "fieldtype": "Section Break", "label": "Attendance"},
+  {"fieldname": "auto_create_attendance", "fieldtype": "Check", "label": "Create ERPNext Attendance", "default": "1", "description": "When on, each finalized day (Present once approved, or Absent) also creates + submits a standard ERPNext Attendance record so it appears in HR → Attendance and feeds payroll. ESS Daily Attendance always keeps the richer project-split / overtime view. Turn off if your site already marks Attendance via shifts."},
 
   {"fieldname": "geofence_section", "fieldtype": "Section Break", "label": "Geofence Defaults", "collapsible": 1},
   {"fieldname": "default_radius_meters", "fieldtype": "Int", "label": "Default site radius (m)", "default": "200", "description": "Used when a Project has site coordinates set but no explicit radius."},

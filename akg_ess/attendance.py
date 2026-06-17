@@ -96,6 +96,11 @@ def compute_daily_attendance(out_doc):
     }
     _upsert_attendance(employee, day, values)
 
+    # Mirror to the standard ERPNext Attendance only once the day is final
+    # (Present). Pending days wait for approval, which re-runs this path.
+    if status == "Present":
+        _sync_standard_attendance(employee, day, "Present", in_row["time"], out_doc.time, hb["total_hours"])
+
 
 def _hours_breakdown(in_dt, out_dt, has_ot, in_proj, out_proj):
     """Total / normal / overtime hours + project A/B split. Overtime only
@@ -188,6 +193,57 @@ def refresh_attendance_status(employee, day):
         return
     status = "Pending Approval" if _day_has_pending_hold(employee, day) else "Present"
     frappe.db.set_value("ESS Daily Attendance", name, "status", status)
+    # Day just released → post the standard Attendance now.
+    if status == "Present":
+        row = frappe.db.get_value(
+            "ESS Daily Attendance", name,
+            ["check_in_time", "check_out_time", "total_hours"], as_dict=True,
+        ) or {}
+        _sync_standard_attendance(
+            employee, day, "Present",
+            row.get("check_in_time"), row.get("check_out_time"), row.get("total_hours") or 0,
+        )
+
+
+def _attendance_enabled():
+    try:
+        from akg_ess.akg_ess.doctype.akg_ess_settings.akg_ess_settings import get_settings
+        return bool(get_settings().get("auto_create_attendance", True))
+    except Exception:
+        return True
+
+
+def _sync_standard_attendance(employee, day, status, in_time=None, out_time=None, working_hours=0):
+    """Create + submit a standard ERPNext Attendance record so the day
+    shows in HR -> Attendance and feeds payroll. Idempotent: skips when a
+    non-cancelled Attendance already exists for (employee, date)."""
+    if status not in ("Present", "Absent"):
+        return
+    if not _attendance_enabled():
+        return
+    if not frappe.db.exists("DocType", "Attendance"):
+        return
+    # Already marked (draft or submitted)? Don't duplicate.
+    if frappe.db.exists("Attendance", {"employee": employee, "attendance_date": str(day), "docstatus": ["<", 2]}):
+        return
+    company = frappe.db.get_value("Employee", employee, "company")
+    try:
+        att = frappe.get_doc({
+            "doctype": "Attendance",
+            "employee": employee,
+            "attendance_date": str(day),
+            "status": status,
+            "company": company,
+            "working_hours": working_hours or 0,
+            "in_time": in_time or None,
+            "out_time": out_time or None,
+        })
+        att.flags.ignore_permissions = True
+        att.insert()
+        att.submit()
+        frappe.db.commit()
+    except Exception:
+        frappe.log_error(frappe.get_traceback(), "AKG ESS · sync standard attendance")
 
 
 def mark_absentees():
@@ -244,6 +300,7 @@ def mark_absentees():
             })
             doc.flags.ignore_permissions = True
             doc.insert()
+            _sync_standard_attendance(emp, yesterday, "Absent")
             created += 1
         except Exception:
             frappe.log_error(frappe.get_traceback(), "AKG ESS · mark_absentees")

@@ -34,4 +34,11 @@ def get_settings():
         "default_vat_account": (doc.default_vat_account if doc and doc.default_vat_account else ""),
         "default_vat_rate": float((doc.default_vat_rate if doc and doc.default_vat_rate is not None else 5)),
         "default_vat_description": (doc.default_vat_description if doc and doc.default_vat_description else "VAT 5%"),
+        # Default ON when the field is unset (fresh install before the
+        # Singleton has been saved).
+        "auto_create_attendance": (
+            bool(getattr(doc, "auto_create_attendance", None))
+            if doc and getattr(doc, "auto_create_attendance", None) is not None
+            else True
+        ),
     }
