@@ -42,7 +42,6 @@ function SiteAttendanceScreen({ geofenceMode, offlineQueue, setOfflineQueue, isO
   const greeting = useGreeting();
   const [sites, setSites] = React.useState([]);
   const [checkins, setCheckins] = React.useState([]);
-  const [activityTypes, setActivityTypes] = React.useState([]);
   const [loading, setLoading] = React.useState(true);
   const [acting, setActing] = React.useState(false);
   const [checkoutModal, setCheckoutModal] = React.useState(null); // { project, openSession }
@@ -53,8 +52,7 @@ function SiteAttendanceScreen({ geofenceMode, offlineQueue, setOfflineQueue, isO
     Promise.all([
       window.frappe.getActiveSites(),
       window.frappe.getMyCheckins(),
-      window.frappe.getActivityTypes(),
-    ]).then(([s, c, a]) => { setSites(s); setCheckins(c); setActivityTypes(a); setLoading(false); });
+    ]).then(([s, c]) => { setSites(s); setCheckins(c); setLoading(false); });
   }, []);
 
   // Refresh hold status whenever checkins change
@@ -139,7 +137,7 @@ function SiteAttendanceScreen({ geofenceMode, offlineQueue, setOfflineQueue, isO
     setCheckoutModal({ project: openSession.project, session: openSession });
   };
 
-  const onConfirmCheckOut = async ({ activity_type, scope_of_work }) => {
+  const onConfirmCheckOut = async ({ scope_of_work }) => {
     setActing(true);
     // Record the project at the CURRENT location for the OUT row. If the
     // engineer checked in at site A and is now at site B, this captures B
@@ -149,7 +147,7 @@ function SiteAttendanceScreen({ geofenceMode, offlineQueue, setOfflineQueue, isO
       log_type: 'OUT',
       latitude: myPos.lat, longitude: myPos.lng,
       project: outProject, accuracy: myPos.accuracy,
-      activity_type, scope_of_work,
+      scope_of_work,
     };
     if (isOffline) {
       setOfflineQueue((q) => [...q, { ...payload, _kind: 'checkin', queued_at: new Date().toISOString() }]);
@@ -401,7 +399,6 @@ function SiteAttendanceScreen({ geofenceMode, offlineQueue, setOfflineQueue, isO
       {checkoutModal && (
         <CheckoutModal
           project={checkoutModal.project}
-          activityTypes={activityTypes}
           sites={sites}
           onCancel={() => setCheckoutModal(null)}
           onConfirm={onConfirmCheckOut}
@@ -1146,11 +1143,10 @@ function TimesheetPreview({ sessions, sites, holdStatus }) {
 }
 
 // ─── Check-out popup with Activity Type + Scope of Work ────────────────
-function CheckoutModal({ project, activityTypes, sites, onCancel, onConfirm, loading }) {
+function CheckoutModal({ project, sites, onCancel, onConfirm, loading }) {
   const t = useT();
   const site = sites.find((s) => s.name === project);
   const [scopes, setScopes] = React.useState([]);
-  const [activity, setActivity] = React.useState('Execution');
   const [scope, setScope] = React.useState('');
 
   // Scopes of Work are a global master (not per-project) — load once.
@@ -1191,41 +1187,6 @@ function CheckoutModal({ project, activityTypes, sites, onCancel, onConfirm, loa
           </div>
 
           <div style={{ marginTop: 18 }}>
-            <label className="field-label">{t.activity_type}</label>
-            {activityTypes.length === 0 ? (
-              <div className="empty-inline" style={{ fontSize: 12, color: 'var(--text-muted)', padding: '10px 12px', background: 'var(--ink-50)', borderRadius: 8, lineHeight: 1.4 }}>
-                No activity types configured yet. Ask an admin to add some at
-                {' '}<a href="/app/activity-type" target="_blank" rel="noopener" style={{ color: 'var(--brand)', textDecoration: 'underline' }}>Setup → Activity Type</a>.
-                You can still check out — activity will be left blank.
-              </div>
-            ) : (
-              <>
-                <div className="seg" role="tablist">
-                  {activityTypes.slice(0, 4).map((a) => (
-                    <button
-                      key={a.name}
-                      type="button"
-                      className={`seg-btn ${activity === a.name ? 'active' : ''}`}
-                      onClick={() => setActivity(a.name)}
-                    >
-                      {a.name}
-                    </button>
-                  ))}
-                </div>
-                <select
-                  className="select"
-                  value={activity}
-                  onChange={(e) => setActivity(e.target.value)}
-                  style={{ marginTop: 8 }}
-                >
-                  <option value="">— Select activity —</option>
-                  {activityTypes.map((a) => <option key={a.name} value={a.name}>{a.name}{a.billable ? ' · billable' : ''}</option>)}
-                </select>
-              </>
-            )}
-          </div>
-
-          <div style={{ marginTop: 14 }}>
             <label className="field-label">{t.scope_of_work}</label>
             {scopes.length === 0 ? (
               <div className="empty-inline" style={{ fontSize: 12, color: 'var(--text-muted)', padding: '10px 12px', background: 'var(--ink-50)', borderRadius: 8, lineHeight: 1.4 }}>
@@ -1244,7 +1205,7 @@ function CheckoutModal({ project, activityTypes, sites, onCancel, onConfirm, loa
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.3fr', gap: 10, marginTop: 22 }}>
             <button className="btn btn-ghost" onClick={onCancel} disabled={loading}>{t.cancel}</button>
-            <button className="btn btn-primary" onClick={() => onConfirm({ activity_type: activity, scope_of_work: scope })} disabled={loading}>
+            <button className="btn btn-primary" onClick={() => onConfirm({ scope_of_work: scope })} disabled={loading}>
               {loading ? <span className="spinner" /> : <Icon name="logout" size={16} />}
               {t.confirm_check_out}
             </button>
