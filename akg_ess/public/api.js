@@ -801,7 +801,15 @@
         fields: ['date', 'status'],
         limit: 0,
       }).catch(() => []);
-      return _buildMonthlyReport(employee, year, month, { checkins, leaves, violations });
+      // Authoritative per-day status (Present / Pending Approval / Absent),
+      // computed server-side on check-out. When a row exists for a day, its
+      // status wins over the raw checkin/violation re-derivation below.
+      const attendance = await listResource('ESS Daily Attendance', {
+        filters: [['employee', '=', employee], ['date', '>=', from], ['date', '<=', to]],
+        fields: ['date', 'status', 'total_hours', 'check_in_time'],
+        limit: 0,
+      }).catch(() => []);
+      return _buildMonthlyReport(employee, year, month, { checkins, leaves, violations, attendance });
     },
 
     // ─── Team / Org ──────────────────────────────────────────────────
@@ -976,7 +984,7 @@
     },
   };
 
-  function _buildMonthlyReport(employee, year, month, { checkins, leaves, violations }) {
+  function _buildMonthlyReport(employee, year, month, { checkins, leaves, violations, attendance }) {
     const todayStr = new Date().toISOString().slice(0, 10);
     const last = new Date(year, month, 0).getDate();
     const days = [];
@@ -986,6 +994,14 @@
     for (const v of violations) {
       const k = (v.date || '').slice(0, 10);
       (violationByDate[k] = violationByDate[k] || []).push(v);
+    }
+    // Authoritative attendance rows keyed by date. Maps the DocType status
+    // to the calendar's status vocabulary.
+    const STATUS_MAP = { 'Present': 'present', 'Pending Approval': 'pending', 'Absent': 'absent' };
+    const attByDate = {};
+    for (const a of (attendance || [])) {
+      const k = (a.date || '').slice(0, 10);
+      if (k) attByDate[k] = a;
     }
     const leaveDays = new Set();
     for (const l of leaves) {
@@ -1014,8 +1030,25 @@
       const dayCheckins = (byDate[iso] || []).slice().sort((a, b) => (a.time || '').localeCompare(b.time || ''));
       const hasViolation = (violationByDate[iso] || []).some((v) => v.status === 'Pending');
       const hasLeave = leaveDays.has(iso);
+      const att = attByDate[iso];
 
       if (isFuture) status = 'future';
+      else if (att) {
+        // Authoritative server-computed status wins (Present / Pending
+        // Approval / Absent). Hours come straight off the attendance row.
+        status = STATUS_MAP[att.status] || 'present';
+        hours = Math.round((parseFloat(att.total_hours) || 0) * 10) / 10;
+        if (att.check_in_time) inTime = String(att.check_in_time).slice(11, 16);
+        if (status === 'absent') {
+          workDays++;
+        } else {
+          presentDays++;
+          workDays++;
+          totalMin += (parseFloat(att.total_hours) || 0) * 60;
+          if (status === 'pending') pendingDays++;
+          if (inTime && inTime > '08:30') lateDays++;
+        }
+      }
       else if (isWeekend && !dayCheckins.length) status = 'weekend';
       else if (hasLeave) status = 'leave';
       else if (dayCheckins.length) {
