@@ -51,8 +51,19 @@ docker compose exec "$BACKEND" bench --site "$SITE" remove-from-installed-apps a
 # 5. Reset the Administrator password for local login.
 docker compose exec "$BACKEND" bench --site "$SITE" set-admin-password admin
 
-# 6. Migrate the restored DB up to the bench's (latest) akg_ess code.
+# 5b. akg_ess is NOT baked into the image (private repo) — it's bind-mounted
+#     from your host at apps/akg_ess. Register + pip-install it so its hooks
+#     load and migrations run. The restored DB already lists it as installed.
+docker compose exec "$BACKEND" bash -lc '
+  cd /home/frappe/frappe-bench;
+  grep -qx akg_ess sites/apps.txt || echo akg_ess >> sites/apps.txt;
+  ./env/bin/pip install -e apps/akg_ess -q;
+'
+
+# 6. Migrate the restored DB up to the bench's (latest) akg_ess code,
+#    then publish the PWA assets.
 docker compose exec "$BACKEND" bench --site "$SITE" migrate
+docker compose exec "$BACKEND" bench build --app akg_ess || true
 
 # 7. Local dev niceties.
 docker compose exec "$BACKEND" bench --site "$SITE" set-config developer_mode 1

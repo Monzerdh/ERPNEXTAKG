@@ -57,10 +57,16 @@ DOCKER_BUILDKIT=1 docker build \
 > right Python (3.11) and Node (18/20) for v15. Don't use the bleeding-edge
 > `.devcontainer` image (Python 3.14 / Node 24) — it cannot run v15.
 
+> **akg_ess is NOT baked into the image** (the repo is private, so the
+> build can't clone it). The image has frappe + erpnext + hrms only;
+> akg_ess is added at restore time from the bind-mounted host repo
+> (`restore.sh` pip-installs it). This also means your edits are truly
+> live — the running app *is* your host repo.
+>
 > **Verify the build worked** before starting the stack:
 > ```bash
 > docker run --rm --entrypoint bash akg-erpnext:local -lc 'cat sites/apps.txt'
-> # must list: frappe erpnext hrms akg_ess  (not just frappe)
+> # must list: frappe erpnext hrms   (akg_ess is added during restore)
 > ```
 
 > **Repo access:** `Monzerdh/ERPNEXTAKG` is public, so the build clones
