@@ -41,21 +41,31 @@ folder) pins the versions.
 git clone https://github.com/frappe/frappe_docker
 cd frappe_docker
 
-# point at our apps.json (adjust the path to this repo's dev/ folder)
-export APPS_JSON_BASE64=$(base64 -w 0 "/mnt/c/Users/Munzer/Desktop/AKG ESS/erpnextAKG/dev/apps.json")
-
-docker build \
+# apps.json is passed as a BUILD SECRET (this Containerfile mounts it at
+# /opt/frappe/apps.json). Do NOT use APPS_JSON_BASE64 with this file.
+DOCKER_BUILDKIT=1 docker build \
   --build-arg=FRAPPE_PATH=https://github.com/frappe/frappe \
   --build-arg=FRAPPE_BRANCH=v15.72.3 \
-  --build-arg=APPS_JSON_BASE64=$APPS_JSON_BASE64 \
+  --build-arg=CACHE_BUST=akg-1 \
+  --secret id=apps_json,src="/c/Users/Munzer/Desktop/AKG ESS/erpnextAKG/dev/apps.json" \
   --tag=akg-erpnext:local \
   --file=images/layered/Containerfile .
 ```
 
-> **Private repo?** If `Monzerdh/ERPNEXTAKG` is private, the build can't
-> clone it. Easiest: make it public for the few minutes of the build.
-> (Alternatively build with only erpnext+hrms in apps.json and install
-> akg_ess from the bind-mount afterwards — ask me and I'll add that path.)
+> **Correct base/Python is automatic.** This Containerfile builds FROM
+> `frappe/build:v15.72.3` / `frappe/base:v15.72.3`, which already ship the
+> right Python (3.11) and Node (18/20) for v15. Don't use the bleeding-edge
+> `.devcontainer` image (Python 3.14 / Node 24) — it cannot run v15.
+
+> **Verify the build worked** before starting the stack:
+> ```bash
+> docker run --rm --entrypoint bash akg-erpnext:local -lc 'cat sites/apps.txt'
+> # must list: frappe erpnext hrms akg_ess  (not just frappe)
+> ```
+
+> **Repo access:** `Monzerdh/ERPNEXTAKG` is public, so the build clones
+> akg_ess fine. If you ever make it private, pass a token or build with
+> only erpnext+hrms and install akg_ess from the bind-mount.
 
 ## 2. Start the stack + create a blank site
 
