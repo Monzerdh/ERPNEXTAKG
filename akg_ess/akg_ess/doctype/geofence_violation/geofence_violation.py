@@ -62,6 +62,7 @@ def on_status_change(doc, method=None):
                 "accuracy_m": doc.accuracy_m,
                 "project": doc.selected_project or doc.nearest_site,
                 "device_id": "ESS-MOBILE",
+                "skip_auto_attendance": 1,
                 "local_id": f"GFV:{doc.name}",
             })
             checkin.flags.ignore_permissions = True

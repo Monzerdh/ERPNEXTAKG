@@ -285,6 +285,9 @@
         activity_type: activity_type || null,
         scope_of_work: scope_of_work || null,
         device_id: 'ESS-MOBILE',
+        // Exclude from HRMS shift auto-attendance — ESS posts Attendance
+        // itself on check-out, with no shift dependency.
+        skip_auto_attendance: 1,
         local_id: _localId || localId(),
       });
     },

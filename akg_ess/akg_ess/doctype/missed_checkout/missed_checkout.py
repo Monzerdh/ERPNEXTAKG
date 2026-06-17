@@ -80,6 +80,7 @@ def on_status_change(doc, method=None):
         "time": timestamp,
         "project": doc.site_name or None,
         "device_id": "ESS-MISSED-RECTIFY",
+        "skip_auto_attendance": 1,
     })
     co.flags.ignore_permissions = True
     co.insert()

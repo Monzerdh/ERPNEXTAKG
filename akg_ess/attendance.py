@@ -96,10 +96,15 @@ def compute_daily_attendance(out_doc):
     }
     _upsert_attendance(employee, day, values)
 
-    # Mirror to the standard ERPNext Attendance only once the day is final
-    # (Present). Pending days wait for approval, which re-runs this path.
-    if status == "Present":
-        _sync_standard_attendance(employee, day, "Present", in_row["time"], out_doc.time, hb["total_hours"])
+    # Mirror to the standard ERPNext Attendance on every completed check-out
+    # so HR -> Attendance is always posted (shift-independent). The ESS
+    # Daily Attendance row keeps its own Pending Approval status for the
+    # off-zone review workflow, but payroll attendance is recorded as
+    # Present once the person has both an IN and an OUT.
+    _sync_standard_attendance(
+        employee, day, "Present", in_row["time"], out_doc.time, hb["total_hours"],
+        link_checkins=[in_row["name"], out_doc.name],
+    )
 
 
 def _hours_breakdown(in_dt, out_dt, has_ot, in_proj, out_proj):
@@ -193,15 +198,16 @@ def refresh_attendance_status(employee, day):
         return
     status = "Pending Approval" if _day_has_pending_hold(employee, day) else "Present"
     frappe.db.set_value("ESS Daily Attendance", name, "status", status)
-    # Day just released → post the standard Attendance now.
+    # Day released → ensure the standard Attendance is posted/linked.
     if status == "Present":
         row = frappe.db.get_value(
             "ESS Daily Attendance", name,
-            ["check_in_time", "check_out_time", "total_hours"], as_dict=True,
+            ["check_in_time", "check_out_time", "total_hours", "in_checkin", "out_checkin"], as_dict=True,
         ) or {}
         _sync_standard_attendance(
             employee, day, "Present",
             row.get("check_in_time"), row.get("check_out_time"), row.get("total_hours") or 0,
+            link_checkins=[row.get("in_checkin"), row.get("out_checkin")],
         )
 
 
@@ -213,19 +219,37 @@ def _attendance_enabled():
         return True
 
 
-def _sync_standard_attendance(employee, day, status, in_time=None, out_time=None, working_hours=0):
+def _link_checkins(names, attendance_name):
+    """Point Employee Checkin.attendance at the created Attendance so the
+    'will not be considered for attendance' shift banner clears."""
+    for n in (names or []):
+        if not n:
+            continue
+        try:
+            frappe.db.set_value("Employee Checkin", n, "attendance", attendance_name, update_modified=False)
+        except Exception:
+            pass
+
+
+def _sync_standard_attendance(employee, day, status, in_time=None, out_time=None, working_hours=0, link_checkins=None):
     """Create + submit a standard ERPNext Attendance record so the day
-    shows in HR -> Attendance and feeds payroll. Idempotent: skips when a
-    non-cancelled Attendance already exists for (employee, date)."""
+    shows in HR -> Attendance and feeds payroll. Shift-independent.
+    Idempotent: when a non-cancelled Attendance already exists for
+    (employee, date) we just (re)link the checkins and return."""
     if status not in ("Present", "Absent"):
         return
     if not _attendance_enabled():
         return
     if not frappe.db.exists("DocType", "Attendance"):
         return
-    # Already marked (draft or submitted)? Don't duplicate.
-    if frappe.db.exists("Attendance", {"employee": employee, "attendance_date": str(day), "docstatus": ["<", 2]}):
-        return
+
+    existing = frappe.db.get_value(
+        "Attendance", {"employee": employee, "attendance_date": str(day), "docstatus": ["<", 2]}, "name"
+    )
+    if existing:
+        _link_checkins(link_checkins, existing)
+        return existing
+
     company = frappe.db.get_value("Employee", employee, "company")
     try:
         att = frappe.get_doc({
@@ -241,7 +265,9 @@ def _sync_standard_attendance(employee, day, status, in_time=None, out_time=None
         att.flags.ignore_permissions = True
         att.insert()
         att.submit()
+        _link_checkins(link_checkins, att.name)
         frappe.db.commit()
+        return att.name
     except Exception:
         frappe.log_error(frappe.get_traceback(), "AKG ESS · sync standard attendance")
 
@@ -307,3 +333,40 @@ def mark_absentees():
     if created:
         frappe.db.commit()
     return {"created": created, "date": str(yesterday)}
+
+
+@frappe.whitelist()
+def backfill_attendance():
+    """One-off: post a standard ERPNext Attendance for every existing ESS
+    Daily Attendance row (Present / Absent) that doesn't have one yet.
+    Run from the desk after enabling the feature to catch days recorded
+    before it was switched on:
+        bench --site <site> execute akg_ess.attendance.backfill_attendance
+    or POST /api/method/akg_ess.attendance.backfill_attendance
+    """
+    if "System Manager" not in frappe.get_roles(frappe.session.user):
+        frappe.throw("System Manager role required.")
+    rows = frappe.get_all(
+        "ESS Daily Attendance",
+        filters=[["status", "in", ["Present", "Absent"]]],
+        fields=["employee", "date", "status", "check_in_time", "check_out_time",
+                "total_hours", "in_checkin", "out_checkin"],
+        order_by="date asc",
+        limit_page_length=0,
+    )
+    posted = 0
+    for r in rows:
+        already = frappe.db.exists(
+            "Attendance", {"employee": r.employee, "attendance_date": str(r.date), "docstatus": ["<", 2]}
+        )
+        _sync_standard_attendance(
+            r.employee, r.date, r.status,
+            r.check_in_time, r.check_out_time, r.total_hours or 0,
+            link_checkins=[r.in_checkin, r.out_checkin],
+        )
+        if not already and frappe.db.exists(
+            "Attendance", {"employee": r.employee, "attendance_date": str(r.date), "docstatus": ["<", 2]}
+        ):
+            posted += 1
+    frappe.db.commit()
+    return {"posted": posted, "scanned": len(rows)}
