@@ -181,8 +181,11 @@ function GeofenceViolations({ mode = 'team' }) {
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {list.map((x) => {
-            const site = window.SITES.find((s) => s.name === x.nearest_site);
-            const project = window.SITES.find((s) => s.name === x.selected_project);
+            // Resolve display names from all active Projects (the off-zone
+            // picker list), falling back to geofenced SITES, then the raw id.
+            const projOf = (id) => id && ((window.PROJECTS || []).find((p) => p.name === id) || (window.SITES || []).find((s) => s.name === id));
+            const site = projOf(x.nearest_site);
+            const project = projOf(x.selected_project);
             const dist = x.distance_m >= 1000 ? `${(x.distance_m / 1000).toFixed(1)} km` : `${x.distance_m} m`;
             const isBusy = busy === x.name;
             const statusChip =
@@ -212,7 +215,7 @@ function GeofenceViolations({ mode = 'team' }) {
                       </div>
                       <div>
                         <div style={{ color: 'var(--text-muted)', marginBottom: 2 }}>{t.nearest}</div>
-                        <div className="truncate"><span style={{ color: 'var(--warn)', fontWeight: 700 }}>{dist}</span> · {site?.project_name || '—'}</div>
+                        <div className="truncate"><span style={{ color: 'var(--warn)', fontWeight: 700 }}>{dist}</span> · {site?.project_name || x.nearest_site || '—'}</div>
                       </div>
                     </div>
 
