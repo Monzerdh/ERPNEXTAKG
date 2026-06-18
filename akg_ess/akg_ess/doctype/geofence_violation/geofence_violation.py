@@ -12,6 +12,12 @@ class GeofenceViolation(Document):
     def validate(self):
         if not self.date and self.time:
             self.date = frappe.utils.getdate(self.time)
+        # Approval authority: only the employee's manager (or System/HR
+        # Manager) may approve or reject — never the employee themselves.
+        if not self.is_new() and self.has_value_changed("status") and self.status in ("Approved", "Rejected"):
+            from akg_ess.api import _can_approve
+            if not _can_approve(frappe.session.user, self.employee):
+                frappe.throw("Only this employee's manager can approve or reject their off-zone request.")
 
     def after_insert(self):
         """Out-of-zone punch filed — nothing is posted to HR, but surface the
@@ -22,6 +28,38 @@ class GeofenceViolation(Document):
             recompute_day(self.employee, frappe.utils.getdate(self.time or self.date))
         except Exception:
             frappe.log_error(frappe.get_traceback(), "GFV after_insert: recompute_day failed")
+
+
+def get_permission_query_conditions(user=None):
+    """Scope the Geofence Violation list:
+       - System / HR Manager: everything ("")
+       - ESS Manager / anyone with reports: own rows OR their team's rows
+         (direct reports + leave-approver assignments)
+       - everyone else: their own rows only
+    Mirrors Missed Checkout. The 'Me' tab reads own rows; the 'My team' tab
+    uses the whitelisted get_team_violations (which excludes self)."""
+    user = user or frappe.session.user
+    if user == "Administrator":
+        return ""
+    roles = set(frappe.get_roles(user))
+    if {"System Manager", "HR Manager"} & roles:
+        return ""
+
+    esc = lambda v: frappe.db.escape(v)[1:-1]
+    own = f"`tabGeofence Violation`.`owner` = '{esc(user)}'"
+    me_emp = frappe.db.get_value("Employee", {"user_id": user}, "name")
+    if not me_emp:
+        return own
+    own_emp = f"`tabGeofence Violation`.`employee` = '{esc(me_emp)}'"
+
+    team = frappe.get_all("Employee", filters=[["reports_to", "=", me_emp], ["status", "=", "Active"]], pluck="name")
+    team += frappe.get_all("Employee", filters=[["leave_approver", "=", user], ["status", "=", "Active"]], pluck="name")
+    team = list({t for t in team if t and t != me_emp})
+    if not team:
+        return f"({own} OR {own_emp})"
+    in_clause = ",".join(f"'{esc(e)}'" for e in team)
+    team_q = f"`tabGeofence Violation`.`employee` IN ({in_clause})"
+    return f"({own} OR {own_emp} OR {team_q})"
 
 
 def on_status_change(doc, method=None):

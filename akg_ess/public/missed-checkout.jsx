@@ -378,16 +378,18 @@ function MissedCheckoutHoldStrip({ status = 'pending', date }) {
 }
 
 // ─── Manager queue — sits on Profile under Geofence Violations.
-function MissedCheckoutsQueue() {
+function MissedCheckoutsQueue({ mode = 'team' }) {
   const t = useT();
   const toast = useToast();
   const [rows, setRows] = React.useState([]);
   const [tab, setTab] = React.useState('pending');
   const [busy, setBusy] = React.useState(null);
+  const canAct = mode === 'team';
 
   const refresh = React.useCallback(() => {
-    window.frappe.getMissedCheckouts().then(setRows).catch(() => setRows([]));
-  }, []);
+    const p = mode === 'team' ? window.frappe.getMissedCheckouts() : window.frappe.getMyMissedCheckouts();
+    Promise.resolve(p).then((r) => setRows(r || [])).catch(() => setRows([]));
+  }, [mode]);
   React.useEffect(() => { refresh(); }, [refresh]);
 
   const pending = rows.filter((r) => r.status === 'Pending');
@@ -485,7 +487,7 @@ function MissedCheckoutsQueue() {
                   </div>
                 </div>
 
-                {x.status === 'Pending' && (
+                {canAct && x.status === 'Pending' && (
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 0, borderTop: '1px solid var(--ink-200)' }}>
                     <button
                       onClick={() => act(x, 'reject')}

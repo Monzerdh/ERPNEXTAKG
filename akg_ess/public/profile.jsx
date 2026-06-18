@@ -37,8 +37,8 @@ function ProfileScreen({ role, setRole, onLogout, outboxCount = 0, onOpenOutbox 
       </div>
 
       {role === 'manager' && <ManagerTeamCard />}
-      {role === 'manager' && <GeofenceViolations />}
-      {role === 'manager' && window.MissedCheckoutsQueue && <MissedCheckoutsQueue />}
+      <ApprovalsSection role={role} />
+
 
       <div className="section-label"><span>{t.app}</span></div>
       <div className="card card-flush">
@@ -93,16 +93,46 @@ function ManagerTeamCard() {
   );
 }
 
-function GeofenceViolations() {
+// Approvals hub — "Me" (my own requests, read-only) and, for managers,
+// "My team" (team requests with approve/reject). A person can never approve
+// their own request; their own off-zone punches / missed check-outs are
+// approved by their manager.
+function ApprovalsSection({ role }) {
+  const t = useT();
+  const isManager = role === 'manager';
+  const [tab, setTab] = React.useState(isManager ? 'team' : 'me');
+  const mode = isManager ? tab : 'me';
+  return (
+    <>
+      <div className="section-label" style={{ marginTop: 8 }}><span>{t.approvals}</span></div>
+      {isManager && (
+        <div className="seg" role="tablist" style={{ marginBottom: 10 }}>
+          <button type="button" className={`seg-btn ${tab === 'me' ? 'active' : ''}`} onClick={() => setTab('me')}>
+            {t.tab_me}
+          </button>
+          <button type="button" className={`seg-btn ${tab === 'team' ? 'active' : ''}`} onClick={() => setTab('team')}>
+            {t.tab_my_team}
+          </button>
+        </div>
+      )}
+      <GeofenceViolations mode={mode} />
+      {window.MissedCheckoutsQueue && <MissedCheckoutsQueue mode={mode} />}
+    </>
+  );
+}
+
+function GeofenceViolations({ mode = 'team' }) {
   const t = useT();
   const toast = useToast();
   const [v, setV] = React.useState([]);
   const [tab, setTab] = React.useState('pending'); // 'pending' | 'reviewed'
   const [busy, setBusy] = React.useState(null); // violation name being acted on
+  const canAct = mode === 'team';
 
   const refresh = React.useCallback(() => {
-    window.frappe.getGeofenceViolations().then(setV);
-  }, []);
+    const p = mode === 'team' ? window.frappe.getTeamViolations() : window.frappe.getMyViolations();
+    Promise.resolve(p).then((rows) => setV(rows || [])).catch(() => setV([]));
+  }, [mode]);
   React.useEffect(() => { refresh(); }, [refresh]);
 
   const pending = v.filter((x) => x.status === 'Pending');
@@ -216,7 +246,7 @@ function GeofenceViolations() {
                   </div>
                 </div>
 
-                {x.status === 'Pending' && (
+                {canAct && x.status === 'Pending' && (
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 0, borderTop: '1px solid var(--ink-200)' }}>
                     <button
                       onClick={() => act(x, 'reject')}

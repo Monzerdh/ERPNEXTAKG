@@ -25,6 +25,7 @@ window.STRINGS = {
   en: {
     appName: 'AKG ESS', tagline: 'Employee Self-Service',
     tab_attendance: 'Attendance', tab_leaves: 'Leaves', tab_petty: 'Petty Cash', tab_approvals: 'Approvals', tab_profile: 'Profile',
+    approvals: 'Approvals', tab_me: 'Me', tab_my_team: 'My team',
     greeting_morning: 'Good morning', greeting_afternoon: 'Good afternoon', greeting_evening: 'Good evening',
     check_in: 'Check In', check_out: 'Check Out', checked_in_at: 'Checked in at', checked_out_at: 'Checked out at',
     location: 'Location', accuracy: 'Accuracy', site: 'Site', no_site_matched: 'Outside any project zone',
@@ -242,6 +243,7 @@ window.STRINGS = {
   ar: {
     appName: 'AKG خدمة الموظفين', tagline: 'الخدمة الذاتية للموظف',
     tab_attendance: 'الحضور', tab_leaves: 'الإجازات', tab_petty: 'النثرية', tab_approvals: 'الموافقات', tab_profile: 'الملف',
+    approvals: 'الموافقات', tab_me: 'لي', tab_my_team: 'فريقي',
     greeting_morning: 'صباح الخير', greeting_afternoon: 'مساء الخير', greeting_evening: 'مساء الخير',
     check_in: 'تسجيل الدخول', check_out: 'تسجيل الخروج', checked_in_at: 'تم الدخول في', checked_out_at: 'تم الخروج في',
     location: 'الموقع', accuracy: 'الدقة', site: 'الموقع', no_site_matched: 'خارج نطاق المشروع',

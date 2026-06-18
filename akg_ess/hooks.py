@@ -99,6 +99,7 @@ permission_query_conditions = {
     "ESS Notification": "akg_ess.akg_ess.doctype.ess_notification.ess_notification.get_permission_query_conditions",
     "Missed Checkout":  "akg_ess.akg_ess.doctype.missed_checkout.missed_checkout.get_permission_query_conditions",
     "ESS Daily Attendance": "akg_ess.akg_ess.doctype.ess_daily_attendance.ess_daily_attendance.get_permission_query_conditions",
+    "Geofence Violation": "akg_ess.akg_ess.doctype.geofence_violation.geofence_violation.get_permission_query_conditions",
 }
 
 # ──────────────────────────────────────────────────────────────────────

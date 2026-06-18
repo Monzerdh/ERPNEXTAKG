@@ -339,11 +339,18 @@
       if (!u.employee) return [];
       return listResource('Geofence Violation', {
         filters: [['employee', '=', u.employee]],
-        fields: ['name', 'log_type', 'time', 'date', 'distance_m', 'nearest_site', 'selected_project',
-                 'reason', 'status', 'manager_notes', 'approver', 'approved_on', 'linked_checkin'],
+        fields: ['name', 'employee', 'employee_name', 'log_type', 'time', 'date', 'distance_m', 'nearest_site',
+                 'selected_project', 'scope_of_work', 'reason', 'status', 'manager_notes', 'approver',
+                 'approved_on', 'linked_checkin'],
         orderBy: 'time desc',
         limit: 50,
       }).catch(() => []);
+    },
+
+    // Manager queue — my team's off-zone requests only (never my own).
+    async getTeamViolations() {
+      const r = await callMethod('akg_ess.api.get_team_violations').catch(() => []);
+      return Array.isArray(r) ? r : [];
     },
 
     async createViolation({ log_type, distance_m, nearest_site, selected_project, scope_of_work, reason, actual_lat, actual_lng, accuracy, linked_checkin, _localId }) {
@@ -586,6 +593,12 @@
     async getMissedCheckouts() {
       try {
         const r = await callMethod('akg_ess.api.get_team_missed_checkouts');
+        return Array.isArray(r) ? r : [];
+      } catch (e) { return []; }
+    },
+    async getMyMissedCheckouts() {
+      try {
+        const r = await callMethod('akg_ess.api.get_my_missed_checkouts');
         return Array.isArray(r) ? r : [];
       } catch (e) { return []; }
     },

@@ -553,13 +553,119 @@ def get_my_missed_checkout_hold():
     return {"name": row["name"], "status": "pending", "date": str(row["date"])}
 
 
+# ──────────────────────────────────────────────────────────────────────
+# Approval authority — who may approve/reject whose requests.
+#   * Never your own request (no self-approval).
+#   * System / HR Manager may approve anyone.
+#   * Otherwise you must be the employee's manager (reports_to) or their
+#     leave approver.
+# ──────────────────────────────────────────────────────────────────────
+def _my_employee(user=None):
+    user = user or frappe.session.user
+    return frappe.db.get_value("Employee", {"user_id": user}, "name")
+
+
+def _team_employee_names(user=None):
+    """Active employees `user` manages: direct reports OR where the user is
+    the configured leave approver. Excludes the user's own employee."""
+    user = user or frappe.session.user
+    me = _my_employee(user)
+    names = set()
+    if me:
+        names |= set(frappe.get_all(
+            "Employee", filters=[["reports_to", "=", me], ["status", "=", "Active"]], pluck="name"))
+    names |= set(frappe.get_all(
+        "Employee", filters=[["leave_approver", "=", user], ["status", "=", "Active"]], pluck="name"))
+    names.discard(me)
+    return names
+
+
+def _can_approve(user, employee):
+    """True if `user` may approve/reject a request belonging to `employee`."""
+    if not employee:
+        return False
+    if employee == _my_employee(user):
+        return False  # never approve your own
+    roles = set(frappe.get_roles(user))
+    if {"System Manager", "HR Manager"} & roles:
+        return True
+    return employee in _team_employee_names(user)
+
+
 @frappe.whitelist()
-def get_team_missed_checkouts():
-    """Manager queue. Pending first, then any decided rows from the
-    last 7 days. Permission scoping via permission_query_conditions."""
+def get_team_violations():
+    """Manager queue for off-zone (geofence) requests — the current user's
+    team only, NEVER their own. Pending first, then recently decided."""
+    team = _team_employee_names()
+    roles = set(frappe.get_roles(frappe.session.user))
+    is_super = bool({"System Manager", "HR Manager"} & roles)
+    me = _my_employee()
+    if is_super:
+        filters = [["status", "in", ["Pending", "Approved", "Rejected"]]]
+        if me:
+            filters.append(["employee", "!=", me])
+    else:
+        if not team:
+            return []
+        filters = [["employee", "in", list(team)], ["status", "in", ["Pending", "Approved", "Rejected"]]]
+    rows = frappe.get_all(
+        "Geofence Violation",
+        filters=filters,
+        fields=[
+            "name", "employee", "employee_name", "log_type", "time", "date",
+            "latitude", "longitude", "accuracy_m",
+            "distance_m", "nearest_site", "selected_project", "scope_of_work",
+            "reason", "status", "manager_notes", "approver", "approved_on", "linked_checkin",
+        ],
+        order_by="modified desc",
+        limit_page_length=200,
+        ignore_permissions=True,
+    )
+    return rows
+
+
+@frappe.whitelist()
+def get_my_missed_checkouts():
+    """The current employee's own missed-checkouts (all statuses) for the
+    'Me' tab — read-only; only the manager can approve/reject."""
+    emp = _my_employee()
+    if not emp:
+        return []
     rows = frappe.get_all(
         "Missed Checkout",
-        filters=[["status", "in", ["Pending", "Approved", "Rejected"]]],
+        filters=[["employee", "=", emp], ["status", "in", ["Pending", "Approved", "Rejected"]]],
+        fields=[
+            "name", "date", "in_time", "site_name", "site_project_name",
+            "is_office_worker", "status", "employee", "employee_name",
+            "proposed_out_time", "edited_out_time", "reason", "elapsed_h",
+            "approver", "approver_comment", "submitted_on",
+        ],
+        order_by="modified desc",
+        limit_page_length=100,
+        ignore_permissions=True,
+    )
+    return [_serialize_mc(r) for r in rows]
+
+
+@frappe.whitelist()
+def get_team_missed_checkouts():
+    """Manager queue — the current user's team only, NEVER their own.
+    Pending first, then any decided rows."""
+    team = _team_employee_names()
+    roles = set(frappe.get_roles(frappe.session.user))
+    is_super = bool({"System Manager", "HR Manager"} & roles)
+    me = _my_employee()
+    if is_super:
+        filters = [["status", "in", ["Pending", "Approved", "Rejected"]]]
+        if me:
+            filters.append(["employee", "!=", me])
+    else:
+        if not team:
+            return []
+        filters = [["employee", "in", list(team)], ["status", "in", ["Pending", "Approved", "Rejected"]]]
+    rows = frappe.get_all(
+        "Missed Checkout",
+        filters=filters,
         fields=[
             "name", "date", "in_time", "site_name", "site_project_name",
             "is_office_worker", "status", "employee", "employee_name",
@@ -568,6 +674,7 @@ def get_team_missed_checkouts():
         ],
         order_by="modified desc",
         limit_page_length=200,
+        ignore_permissions=True,
     )
     return [_serialize_mc(r) for r in rows]
 
@@ -621,6 +728,8 @@ def approve_missed_checkout(name, edited_out_time="", comment=""):
     doc = frappe.get_doc("Missed Checkout", name)
     if doc.status != "Pending":
         frappe.throw("Only Pending rows can be approved.")
+    if not _can_approve(frappe.session.user, doc.employee):
+        frappe.throw("You can only approve missed check-outs for your own team members.")
     if edited_out_time:
         doc.edited_out_time = edited_out_time.strip()
     doc.approver = frappe.session.user
@@ -638,6 +747,8 @@ def reject_missed_checkout(name, comment=""):
     doc = frappe.get_doc("Missed Checkout", name)
     if doc.status != "Pending":
         frappe.throw("Only Pending rows can be rejected.")
+    if not _can_approve(frappe.session.user, doc.employee):
+        frappe.throw("You can only reject missed check-outs for your own team members.")
     doc.approver = frappe.session.user
     doc.approver_comment = (comment or "Rejected — please re-submit.").strip()
     doc.approved_on = now_datetime()
