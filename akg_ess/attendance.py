@@ -52,10 +52,13 @@ def record_checkin_in(in_doc):
     # Don't downgrade a day that already has a check-out / decision.
     if existing and existing.status in ("Present", "Pending Approval", "Missed Checkout"):
         return
+    # Off-zone check-in (a violation was already filed for the day) opens the
+    # row as Pending Approval; an in-zone check-in is simply Checked In.
+    status = "Pending Approval" if _day_has_pending_hold(in_doc.employee, day) else "Checked In"
     values = {
         "employee": in_doc.employee,
         "date": day,
-        "status": "Checked In",
+        "status": status,
         "check_in_time": in_doc.time,
         "check_in_project": in_doc.project,
         "in_checkin": in_doc.name,
@@ -127,15 +130,15 @@ def compute_daily_attendance(out_doc):
     }
     _upsert_attendance(employee, day, values)
 
-    # Mirror to the standard ERPNext Attendance on every completed check-out
-    # so HR -> Attendance is always posted (shift-independent). The ESS
-    # Daily Attendance row keeps its own Pending Approval status for the
-    # off-zone review workflow, but payroll attendance is recorded as
-    # Present once the person has both an IN and an OUT.
-    _sync_standard_attendance(
-        employee, day, "Present", in_row["time"], out_doc.time, hb["total_hours"],
-        link_checkins=[in_row["name"], out_doc.name],
-    )
+    # Post the standard ERPNext Attendance only when the day is final
+    # (Present). If the day is on hold for an off-zone review, HR Attendance
+    # is withheld — it gets posted when the manager approves (see
+    # refresh_attendance_status, called from the geofence approval hook).
+    if status == "Present":
+        _sync_standard_attendance(
+            employee, day, "Present", in_row["time"], out_doc.time, hb["total_hours"],
+            link_checkins=[in_row["name"], out_doc.name],
+        )
 
 
 def _hours_breakdown(in_dt, out_dt, has_ot, in_proj, out_proj):
@@ -401,3 +404,62 @@ def backfill_attendance():
             posted += 1
     frappe.db.commit()
     return {"posted": posted, "scanned": len(rows)}
+
+
+@frappe.whitelist()
+def reset_day(employee, date):
+    """TESTING HELPER — wipe all of an employee's attendance records for a
+    day so the check-in/out flow can be re-tested:
+
+      - cancels + deletes the standard HR Attendance
+      - deletes the ESS Daily Attendance row
+      - deletes any Missed Checkout / Geofence Violation for the day
+      - deletes the Employee Checkin IN/OUT rows
+
+    System Manager only. Call from the desk Awesomebar (API) or bench:
+        bench --site <site> execute akg_ess.attendance.reset_day \
+              --kwargs "{'employee':'HR-EMP-00015','date':'2026-06-17'}"
+    """
+    if "System Manager" not in frappe.get_roles(frappe.session.user):
+        frappe.throw("System Manager role required.")
+
+    day = frappe.utils.getdate(date)
+    deleted = {"attendance": 0, "ess_daily": 0, "missed_checkout": 0, "violation": 0, "checkin": 0}
+
+    # 1. Standard HR Attendance (submitted → cancel first).
+    for name in frappe.get_all("Attendance", filters={"employee": employee, "attendance_date": day}, pluck="name"):
+        doc = frappe.get_doc("Attendance", name)
+        if doc.docstatus == 1:
+            doc.flags.ignore_permissions = True
+            doc.cancel()
+        frappe.delete_doc("Attendance", name, force=1, ignore_permissions=True)
+        deleted["attendance"] += 1
+
+    # 2. ESS Daily Attendance.
+    for name in frappe.get_all("ESS Daily Attendance", filters={"employee": employee, "date": day}, pluck="name"):
+        frappe.delete_doc("ESS Daily Attendance", name, force=1, ignore_permissions=True)
+        deleted["ess_daily"] += 1
+
+    # 3. Missed Checkout.
+    if frappe.db.exists("DocType", "Missed Checkout"):
+        for name in frappe.get_all("Missed Checkout", filters={"employee": employee, "date": day}, pluck="name"):
+            frappe.delete_doc("Missed Checkout", name, force=1, ignore_permissions=True)
+            deleted["missed_checkout"] += 1
+
+    # 4. Geofence Violation.
+    if frappe.db.exists("DocType", "Geofence Violation"):
+        for name in frappe.get_all("Geofence Violation", filters={"employee": employee, "date": day}, pluck="name"):
+            frappe.delete_doc("Geofence Violation", name, force=1, ignore_permissions=True)
+            deleted["violation"] += 1
+
+    # 5. Employee Checkin (IN + OUT) for the day.
+    for name in frappe.get_all(
+        "Employee Checkin",
+        filters=[["employee", "=", employee], ["time", ">=", f"{day} 00:00:00"], ["time", "<=", f"{day} 23:59:59"]],
+        pluck="name",
+    ):
+        frappe.delete_doc("Employee Checkin", name, force=1, ignore_permissions=True)
+        deleted["checkin"] += 1
+
+    frappe.db.commit()
+    return {"employee": employee, "date": str(day), "deleted": deleted}

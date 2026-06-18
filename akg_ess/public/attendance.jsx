@@ -113,10 +113,10 @@ function SiteAttendanceScreen({ geofenceMode, offlineQueue, setOfflineQueue, isO
   };
 
   const onConfirmCheckOut = async ({ scope_of_work }) => {
-    // Off-zone check-out: hold everything. Don't create the OUT checkin —
-    // open the violation popup (carrying the chosen scope). Nothing posts
-    // to the system until the manager approves; approval then creates the
-    // OUT checkin → ESS Daily Attendance + HR Attendance.
+    // Off-zone check-out: the punch IS recorded (so the day can be
+    // completed), but it's flagged for review — open the violation popup
+    // to capture project + reason. Official attendance (ESS Daily + HR)
+    // stays Pending Approval until the manager approves.
     if (!match.inside) {
       setCheckoutModal(null);
       setOutsideZoneModal({
@@ -162,30 +162,46 @@ function SiteAttendanceScreen({ geofenceMode, offlineQueue, setOfflineQueue, isO
     }
   };
 
-  // Off-zone IN/OUT: file a Geofence Violation only. NOTHING is posted to
-  // the system (no Employee Checkin, no attendance) until a manager
-  // approves — approval creates the checkin which then posts attendance.
+  // Off-zone IN/OUT: record the real punch (so the employee can finish the
+  // day) AND file a Geofence Violation that holds the official attendance
+  // (ESS Daily + HR) as Pending Approval until the manager approves.
   const onSubmitViolation = async ({ selected_project, reason }) => {
     setActing(true);
     const ctx = outsideZoneModal;
+    const payload = {
+      log_type: ctx.type,
+      latitude: myPos.lat, longitude: myPos.lng,
+      project: selected_project, accuracy: myPos.accuracy,
+      scope_of_work: ctx.type === 'OUT' ? (ctx.scope_of_work || null) : null,
+    };
     try {
+      // File the violation FIRST so the day is on hold before the punch
+      // posts — the check-in's compute then keeps official attendance
+      // Pending Approval (no brief Present/HR flash).
       await window.frappe.createViolation({
         log_type: ctx.type,
         distance_m: ctx.distance,
         nearest_site: ctx.nearest?.name,
         selected_project,
-        scope_of_work: ctx.scope_of_work || null,
+        scope_of_work: payload.scope_of_work,
         reason,
         actual_lat: myPos.lat, actual_lng: myPos.lng,
       });
-      // refresh hold-status for the timesheet preview
+      const row = await window.frappe.createCheckin(payload);
+      setCheckins((c) => [row, ...c]);
       const today = new Date().toISOString().slice(0, 10);
       const hs = await window.frappe.getDayHoldStatus(window.CURRENT_USER.employee, today);
       setHoldStatus(hs);
-      toast(t.pending_review, 'warn');
+      toast(`${ctx.type === 'IN' ? t.check_in : t.check_out} ✓ · ${t.pending_review}`, 'warn');
       setOutsideZoneModal(null);
     } catch (e) {
-      toast(e.message || 'Failed', 'bad');
+      if (window.frappe.isNetworkError && window.frappe.isNetworkError(e) && setOfflineQueue) {
+        setOfflineQueue((q) => [...q, { ...payload, _kind: 'checkin', queued_at: new Date().toISOString() }]);
+        toast(`${ctx.type === 'IN' ? t.check_in : t.check_out} — saved, will sync when online`, 'warn');
+        setOutsideZoneModal(null);
+      } else {
+        toast(e.message || 'Failed', 'bad');
+      }
     } finally {
       setActing(false);
     }
@@ -280,17 +296,6 @@ function SiteAttendanceScreen({ geofenceMode, offlineQueue, setOfflineQueue, isO
               </div>
             </div>
             <Icon name="shield" size={18} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
-          </div>
-        ) : holdStatus === 'pending' ? (
-          <div className="office-done-card" style={{ background: 'var(--warn-100)', borderColor: 'var(--warn)' }}>
-            <div className="office-done-icon" style={{ background: 'var(--warn)', color: 'white' }}>
-              <Icon name="clock" size={22} />
-            </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div className="office-done-title" style={{ color: 'var(--warn)' }}>{t.pending_review}</div>
-              <div className="office-done-sub">{t.pending_action_sub}</div>
-            </div>
-            <Icon name="warn" size={18} style={{ color: 'var(--warn)', flexShrink: 0 }} />
           </div>
         ) : (
           <button

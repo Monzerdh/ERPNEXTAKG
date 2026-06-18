@@ -346,7 +346,7 @@
       }).catch(() => []);
     },
 
-    async createViolation({ log_type, distance_m, nearest_site, selected_project, scope_of_work, reason, actual_lat, actual_lng, accuracy, _localId }) {
+    async createViolation({ log_type, distance_m, nearest_site, selected_project, scope_of_work, reason, actual_lat, actual_lng, accuracy, linked_checkin, _localId }) {
       const u = await loadCurrentUser();
       return insertResource('Geofence Violation', {
         employee: u.employee,
@@ -361,6 +361,7 @@
         scope_of_work: scope_of_work || null,
         reason,
         status: 'Pending',
+        linked_checkin: linked_checkin || null,
         local_id: _localId || localId(),
       });
     },

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "akg_ess"
-version = "0.9.1"
+version = "0.9.2"
 description = "Employee Self-Service PWA for AKG Contracting (attendance, leaves, petty cash)."
 requires-python = ">=3.10"
 readme = "README.md"

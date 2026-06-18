@@ -79,6 +79,15 @@ def on_status_change(doc, method=None):
         doc.db_set("approver", doc.approver, update_modified=False)
         doc.db_set("approved_on", doc.approved_on, update_modified=False)
 
+        # Release the day: now that the punch is approved, re-evaluate the
+        # ESS Daily Attendance row. If nothing else holds the day it flips to
+        # Present and the standard HR Attendance is posted/linked.
+        try:
+            from akg_ess.attendance import refresh_attendance_status
+            refresh_attendance_status(doc.employee, day)
+        except Exception:
+            frappe.log_error(frappe.get_traceback(), "GFV approve: refresh_attendance_status failed")
+
     elif doc.status == "Rejected":
         if not doc.approver:
             doc.db_set("approver", frappe.session.user, update_modified=False)
