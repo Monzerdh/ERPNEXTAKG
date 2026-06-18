@@ -592,6 +592,53 @@ def _can_approve(user, employee):
     return employee in _team_employee_names(user)
 
 
+def _today_status(employee, day):
+    """Live attendance state for a day (single-session model):
+       'out'  — checked out (recorded OR pending off-zone OUT) → day done
+       'in'   — checked in, still on the clock (recorded OR pending IN)
+       'none' — no check-in yet
+    Pending off-zone punches count, since the person did punch (it's just
+    awaiting approval)."""
+    ds, de = f"{day} 00:00:00", f"{day} 23:59:59"
+
+    def has_ck(lt):
+        return bool(frappe.db.exists("Employee Checkin", [
+            ["employee", "=", employee], ["log_type", "=", lt], ["time", ">=", ds], ["time", "<=", de]]))
+
+    def has_pending(lt):
+        return (frappe.db.exists("DocType", "Geofence Violation")
+                and bool(frappe.db.exists("Geofence Violation",
+                    {"employee": employee, "date": day, "log_type": lt, "status": "Pending"})))
+
+    if has_ck("OUT") or has_pending("OUT"):
+        return "out"
+    if has_ck("IN") or has_pending("IN"):
+        return "in"
+    return "none"
+
+
+@frappe.whitelist()
+def get_team():
+    """Direct reports of the current user, each with today's live attendance
+    status (in / out / none) for the manager's team card."""
+    me = _my_employee()
+    if not me:
+        return []
+    members = frappe.get_all(
+        "Employee",
+        filters=[["reports_to", "=", me], ["status", "=", "Active"]],
+        fields=["name", "employee_name", "designation", "department", "image", "cell_number", "user_id"],
+        order_by="employee_name asc",
+        limit_page_length=100,
+    )
+    today = frappe.utils.nowdate()
+    for m in members:
+        m["today_status"] = _today_status(m["name"], today)
+        parts = (m.get("employee_name") or "").split()
+        m["avatar_initials"] = ((parts[0][:1] if parts else "") + (parts[-1][:1] if len(parts) > 1 else "")).upper()
+    return members
+
+
 @frappe.whitelist()
 def get_team_violations():
     """Manager queue for off-zone (geofence) requests — the current user's

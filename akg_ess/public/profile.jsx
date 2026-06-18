@@ -76,15 +76,21 @@ function ManagerTeamCard() {
       <div className="section-label"><span>{t.direct_reports}</span><span>{team.length}</span></div>
       <div className="card card-flush">
         {team.map((m) => {
-          const site = window.SITES.find((s) => s.name === m.current_site);
+          // Live attendance status for today: in / out / not-checked-in.
+          const st = m.today_status || 'none';
+          const chip = st === 'in'
+            ? { label: t.live_in, style: { background: 'var(--ok-100)', color: 'var(--ok)' }, dot: true }
+            : st === 'out'
+              ? { label: t.live_out, style: { background: 'var(--ink-100)', color: 'var(--text-muted)' }, dot: false }
+              : { label: t.live_not_in, style: { background: 'var(--surface-2)', color: 'var(--text-muted)' }, dot: false };
           return (
-            <div key={m.employee} className="list-row">
+            <div key={m.name || m.employee} className="list-row">
               <Avatar initials={m.avatar_initials} />
               <div className="list-row-body">
                 <div className="list-row-title">{m.employee_name}</div>
                 <div className="list-row-sub truncate">{m.designation}</div>
               </div>
-              <span className="chip chip-info chip-dot" style={{ background: 'var(--ok-100)', color: 'var(--ok)' }}>{t.on_site}</span>
+              <span className={`chip ${chip.dot ? 'chip-dot' : ''}`} style={chip.style}>{chip.label}</span>
             </div>
           );
         })}

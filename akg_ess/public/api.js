@@ -832,13 +832,10 @@
 
     // ─── Team / Org ──────────────────────────────────────────────────
     async getTeam() {
-      const u = await loadCurrentUser();
-      if (!u.employee) return [];
-      return listResource('Employee', {
-        filters: [['reports_to', '=', u.employee], ['status', '=', 'Active']],
-        fields: ['name', 'employee_name', 'designation', 'department', 'image', 'cell_number', 'user_id'],
-        limit: 100,
-      }).catch(() => []);
+      // Whitelisted — returns direct reports + today's live status
+      // (today_status: 'in' | 'out' | 'none') + avatar_initials.
+      const r = await callMethod('akg_ess.api.get_team').catch(() => []);
+      return Array.isArray(r) ? r : [];
     },
 
     // ─── Notifications ───────────────────────────────────────────────
