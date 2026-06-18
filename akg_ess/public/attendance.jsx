@@ -132,24 +132,52 @@ function SiteAttendanceScreen({ geofenceMode, offlineQueue, setOfflineQueue, isO
   };
 
   const onRequestCheckOut = () => {
-    // Open popup with Activity Type + Task dropdowns
-    setCheckoutModal({ project: openSession.project, session: openSession });
+    // Open the check-out sheet. When outside any zone it also captures the
+    // project + reason for the off-zone approval (no separate popup).
+    setCheckoutModal({
+      project: openSession.project,
+      session: openSession,
+      inside: match.inside,
+      distance: match.distance,
+      nearest: match.site,
+      defaultProject: openSession?.project || match.site?.name || '',
+    });
   };
 
-  const onConfirmCheckOut = async ({ scope_of_work }) => {
-    // Off-zone check-out: the punch IS recorded (so the day can be
-    // completed), but it's flagged for review — open the violation popup
-    // to capture project + reason. Official attendance (ESS Daily + HR)
-    // stays Pending Approval until the manager approves.
+  const onConfirmCheckOut = async ({ scope_of_work, selected_project, reason }) => {
+    // Off-zone check-out: record NOTHING — file a Geofence Violation only,
+    // captured right here in the checkout sheet (scope + project + reason).
+    // Official attendance (ESS Daily + HR) is held until the manager approves.
     if (!match.inside) {
-      setCheckoutModal(null);
-      setOutsideZoneModal({
-        type: 'OUT',
-        distance: match.distance,
-        nearest: match.site,
-        scope_of_work,
-        defaultProject: openSession?.project || match.site?.name,
-      });
+      setActing(true);
+      const vpayload = {
+        log_type: 'OUT',
+        distance_m: match.distance,
+        nearest_site: match.site?.name,
+        selected_project,
+        scope_of_work: scope_of_work || null,
+        reason,
+        actual_lat: myPos.lat, actual_lng: myPos.lng, accuracy: myPos.accuracy,
+      };
+      try {
+        await window.frappe.createViolation(vpayload);
+        await reloadViolations();
+        const today = new Date().toISOString().slice(0, 10);
+        const hs = await window.frappe.getDayHoldStatus(window.CURRENT_USER.employee, today);
+        setHoldStatus(hs);
+        toast(`${t.check_out} · ${t.pending_review}`, 'warn');
+        setCheckoutModal(null);
+      } catch (e) {
+        if (window.frappe.isNetworkError && window.frappe.isNetworkError(e) && setOfflineQueue) {
+          setOfflineQueue((q) => [...q, { ...vpayload, _kind: 'violation', queued_at: new Date().toISOString() }]);
+          toast(`${t.check_out} — saved, will sync when online`, 'warn');
+          setCheckoutModal(null);
+        } else {
+          toast(e.message || 'Failed', 'bad');
+        }
+      } finally {
+        setActing(false);
+      }
       return;
     }
 
@@ -396,6 +424,10 @@ function SiteAttendanceScreen({ geofenceMode, offlineQueue, setOfflineQueue, isO
         <CheckoutModal
           project={checkoutModal.project}
           sites={sites}
+          inside={checkoutModal.inside !== false}
+          distance={checkoutModal.distance}
+          nearest={checkoutModal.nearest}
+          defaultProject={checkoutModal.defaultProject}
           onCancel={() => setCheckoutModal(null)}
           onConfirm={onConfirmCheckOut}
           loading={acting}
@@ -1136,11 +1168,15 @@ function TimesheetPreview({ sessions, sites, holdStatus }) {
 }
 
 // ─── Check-out popup with Activity Type + Scope of Work ────────────────
-function CheckoutModal({ project, sites, onCancel, onConfirm, loading }) {
+function CheckoutModal({ project, sites, inside = true, distance = 0, nearest = null, defaultProject = '', onCancel, onConfirm, loading }) {
   const t = useT();
   const site = sites.find((s) => s.name === project);
   const [scopes, setScopes] = React.useState([]);
   const [scope, setScope] = React.useState('');
+  // Off-zone check-out also needs project + reason (held for approval).
+  const projectOptions = (window.PROJECTS && window.PROJECTS.length) ? window.PROJECTS : sites;
+  const [offProject, setOffProject] = React.useState(defaultProject || nearest?.name || project || '');
+  const [reason, setReason] = React.useState('');
 
   // Scopes of Work are a global master (not per-project) — load once.
   // Pre-select the employee's default scope when set and still active;
@@ -1156,13 +1192,19 @@ function CheckoutModal({ project, sites, onCancel, onConfirm, loading }) {
 
   // Close on Escape
   React.useEffect(() => {
-    const onKey = (e) => { if (e.key === 'Escape') onCancel(); };
+    const onKey = (e) => { if (e.key === 'Escape' && !loading) onCancel(); };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [onCancel]);
+  }, [onCancel, loading]);
+
+  const distLabel = distance >= 1000 ? `${(distance / 1000).toFixed(1)} km` : `${distance} m`;
+  const canSubmit = inside ? !loading : (offProject && reason.trim().length >= 8 && !loading);
+  const submit = () => onConfirm(inside
+    ? { scope_of_work: scope }
+    : { scope_of_work: scope, selected_project: offProject, reason: reason.trim() });
 
   return ReactDOM.createPortal(
-    <div className="modal-backdrop" onClick={onCancel}>
+    <div className="modal-backdrop" onClick={loading ? undefined : onCancel}>
       <div className="modal-sheet" onClick={(e) => e.stopPropagation()}>
         <div style={{ padding: '20px 20px 18px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
@@ -1176,10 +1218,38 @@ function CheckoutModal({ project, sites, onCancel, onConfirm, loading }) {
             <div style={{ fontSize: 17, fontWeight: 700, letterSpacing: '-0.01em' }}>{t.check_out}</div>
           </div>
           <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-            {site ? site.project_name : t.unassigned_outside}
+            {inside ? (site ? site.project_name : t.unassigned_outside) : t.unassigned_outside}
           </div>
 
-          <div style={{ marginTop: 18 }}>
+          {/* Off-zone: distance readout + manager-review note */}
+          {!inside && (
+            <>
+              <div style={{ marginTop: 14, padding: '10px 12px', background: 'var(--ink-50)', border: '1px solid var(--ink-200)', borderRadius: 10, display: 'flex', alignItems: 'center', gap: 10 }}>
+                <Icon name="pin" size={16} style={{ color: 'var(--warn)', flexShrink: 0 }} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{t.nearest}</div>
+                  <div className="truncate" style={{ fontSize: 13, fontWeight: 600 }}>{nearest?.project_name || '—'}</div>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <div className="tabular" style={{ fontSize: 15, fontWeight: 700, color: 'var(--warn)' }}>{distLabel}</div>
+                  <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{t.away_from}</div>
+                </div>
+              </div>
+              <div className="violation-impact">
+                <div className="violation-impact-icon"><Icon name="user" size={14} /></div>
+                <div className="violation-impact-body">
+                  <div className="violation-impact-title">{t.day_will_be_held}</div>
+                  <div className="violation-impact-sub">
+                    <Icon name="user" size={11} />
+                    {t.manager_review}: <b>{(window.CURRENT_USER && (window.CURRENT_USER.leave_approver_name || window.CURRENT_USER.leave_approver || window.CURRENT_USER.reports_to_name)) || '—'}</b>
+                  </div>
+                </div>
+                <span className="chip chip-warn chip-dot"><Icon name="warn" size={11} /> {t.pending_review}</span>
+              </div>
+            </>
+          )}
+
+          <div style={{ marginTop: 16 }}>
             <label className="field-label">{t.scope_of_work}</label>
             {scopes.length === 0 ? (
               <div className="empty-inline" style={{ fontSize: 12, color: 'var(--text-muted)', padding: '10px 12px', background: 'var(--ink-50)', borderRadius: 8, lineHeight: 1.4 }}>
@@ -1196,11 +1266,41 @@ function CheckoutModal({ project, sites, onCancel, onConfirm, loading }) {
             )}
           </div>
 
+          {/* Off-zone: project + reason (required, held for approval) */}
+          {!inside && (
+            <>
+              <div style={{ marginTop: 12 }}>
+                <label className="field-label">{t.select_project} *</label>
+                <select className="select" value={offProject} onChange={(e) => setOffProject(e.target.value)} disabled={loading}>
+                  <option value="">{t.select_project_ph}</option>
+                  {projectOptions.map((s) => (
+                    <option key={s.name} value={s.name}>{s.project_name || s.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div style={{ marginTop: 12 }}>
+                <label className="field-label">{t.why_off_zone} *</label>
+                <textarea
+                  className="field-textarea"
+                  value={reason}
+                  onChange={(e) => setReason(e.target.value)}
+                  placeholder={t.why_off_zone_ph}
+                  rows={3}
+                  disabled={loading}
+                  style={{ minHeight: 78 }}
+                />
+                <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 4, textAlign: 'right' }}>
+                  {reason.trim().length < 8 ? `${8 - reason.trim().length} ${t.chars_more}` : `${reason.length} ${t.chars}`}
+                </div>
+              </div>
+            </>
+          )}
+
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.3fr', gap: 10, marginTop: 22 }}>
             <button className="btn btn-ghost" onClick={onCancel} disabled={loading}>{t.cancel}</button>
-            <button className="btn btn-primary" onClick={() => onConfirm({ scope_of_work: scope })} disabled={loading}>
-              {loading ? <span className="spinner" /> : <Icon name="logout" size={16} />}
-              {t.confirm_check_out}
+            <button className="btn btn-primary" onClick={submit} disabled={!canSubmit}>
+              {loading ? <span className="spinner" /> : <Icon name={inside ? 'logout' : 'check'} size={16} />}
+              {inside ? t.confirm_check_out : t.submit_for_review}
             </button>
           </div>
         </div>
