@@ -4,8 +4,12 @@ from frappe.model.document import Document
 
 class GeofenceViolation(Document):
     def before_insert(self):
-        if not self.date and self.time:
-            self.date = frappe.utils.getdate(self.time)
+        # Server-authoritative timestamp — never trust the device clock for
+        # attendance (a phone's time can be changed). now_datetime() is the
+        # site-local server time. (An offline-queued punch therefore records
+        # its sync time, not the device's.)
+        self.time = frappe.utils.now_datetime()
+        self.date = frappe.utils.getdate(self.time)
         if not self.status:
             self.status = "Pending"
 

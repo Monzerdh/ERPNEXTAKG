@@ -37,14 +37,16 @@ def enforce_single_daily(doc, method=None):
 
     # System-generated inserts bypass the guard: the geofence-approval and
     # missed-checkout-rectify hooks create rows with ignore_permissions set,
-    # and they do their own idempotency checks. Only user-facing REST
-    # inserts (no ignore_permissions) are enforced here.
+    # and they do their own idempotency checks. They also carry an
+    # authoritative time (the violation's server time / the manager's chosen
+    # out-time), so we keep it. Only user-facing REST inserts are enforced.
     if getattr(doc, "flags", None) and doc.flags.get("ignore_permissions"):
         return
 
-    # Date to scope by — the date portion of the row's `time` field.
-    if not doc.time:
-        doc.time = frappe.utils.now_datetime()
+    # Server-authoritative timestamp for user punches — overwrite any client
+    # value. A device clock can be wrong or deliberately changed, so the
+    # punch time is always the site-local server time.
+    doc.time = frappe.utils.now_datetime()
     day = frappe.utils.getdate(doc.time)
     day_start = f"{day} 00:00:00"
     day_end = f"{day} 23:59:59"
