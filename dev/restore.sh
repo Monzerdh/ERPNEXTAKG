@@ -6,6 +6,11 @@
 # Usage:  bash restore.sh
 set -euo pipefail
 
+# Git Bash on Windows rewrites in-container paths like /tmp/db.sql.gz into
+# C:/Users/.../Temp/... before they reach docker. Disable that conversion.
+export MSYS_NO_PATHCONV=1
+export MSYS2_ARG_CONV_EXCL='*'
+
 SITE="${SITE:-dev.localhost}"
 BACKEND="${BACKEND:-backend}"            # backend service name in docker-compose.yml
 # Backup files live in ../../DB relative to this script (AKG ESS/DB).
@@ -56,7 +61,8 @@ docker compose exec "$BACKEND" bench --site "$SITE" set-admin-password admin
 #     load and migrations run. The restored DB already lists it as installed.
 docker compose exec "$BACKEND" bash -lc '
   cd /home/frappe/frappe-bench;
-  grep -qx akg_ess sites/apps.txt || echo akg_ess >> sites/apps.txt;
+  # Rebuild apps.txt safely (no trailing-newline mishaps), then pip-install.
+  { grep -vxF akg_ess sites/apps.txt; echo akg_ess; } | sed "/^$/d" > sites/apps.txt.new && mv sites/apps.txt.new sites/apps.txt;
   ./env/bin/pip install -e apps/akg_ess -q;
 '
 
