@@ -122,11 +122,19 @@
     if (_currentUserCache) return _currentUserCache;
     // Single-shot bootstrap on the server — avoids querying Has Role
     // (a child table) over REST and saves round-trips.
-    const profile = await callMethod('akg_ess.api.get_session_profile').catch((e) => {
-      const err = new Error('Not signed in');
-      err.status = e.status || 401;
+    // Probe the session. IMPORTANT: only a real 401/403 means "not signed
+    // in". A network blip / timeout / 5xx (e.g. a cold Frappe Cloud worker)
+    // must NOT be treated as a logout — rethrow it with its real status so
+    // the bootstrap can retry instead of bouncing a valid session to login.
+    let profile;
+    try {
+      profile = await callMethod('akg_ess.api.get_session_profile');
+    } catch (e) {
+      const err = new Error('session probe failed');
+      err.status = (e && typeof e.status === 'number') ? e.status : 0; // 0 = network/unknown
+      err.transient = err.status === 0 || err.status >= 500;
       throw err;
-    });
+    }
     if (!profile || !profile.signed_in) {
       const err = new Error('Not signed in');
       err.status = 401;

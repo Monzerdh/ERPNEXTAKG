@@ -29,7 +29,7 @@
 <link rel="preconnect" href="https://c.tile.openstreetmap.org" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="anonymous" />
-<link rel="stylesheet" href="/assets/akg_ess/styles.css?v=70" />
+<link rel="stylesheet" href="/assets/akg_ess/styles.css?v=71" />
 </head>
 <body>
 <div id="root"></div>
@@ -39,16 +39,16 @@
 <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin="anonymous"></script>
 
-<script src="/assets/akg_ess/data.js?v=70"></script>
-<script src="/assets/akg_ess/api.js?v=70"></script>
-<script type="text/babel" src="/assets/akg_ess/ui.jsx?v=70"></script>
-<script type="text/babel" src="/assets/akg_ess/attendance.jsx?v=70"></script>
-<script type="text/babel" src="/assets/akg_ess/monthly-report.jsx?v=70"></script>
-<script type="text/babel" src="/assets/akg_ess/leaves.jsx?v=70"></script>
-<script type="text/babel" src="/assets/akg_ess/petty.jsx?v=70"></script>
-<script type="text/babel" src="/assets/akg_ess/profile.jsx?v=70"></script>
-<script type="text/babel" src="/assets/akg_ess/notifications.jsx?v=70"></script>
-<script type="text/babel" src="/assets/akg_ess/missed-checkout.jsx?v=70"></script>
+<script src="/assets/akg_ess/data.js?v=71"></script>
+<script src="/assets/akg_ess/api.js?v=71"></script>
+<script type="text/babel" src="/assets/akg_ess/ui.jsx?v=71"></script>
+<script type="text/babel" src="/assets/akg_ess/attendance.jsx?v=71"></script>
+<script type="text/babel" src="/assets/akg_ess/monthly-report.jsx?v=71"></script>
+<script type="text/babel" src="/assets/akg_ess/leaves.jsx?v=71"></script>
+<script type="text/babel" src="/assets/akg_ess/petty.jsx?v=71"></script>
+<script type="text/babel" src="/assets/akg_ess/profile.jsx?v=71"></script>
+<script type="text/babel" src="/assets/akg_ess/notifications.jsx?v=71"></script>
+<script type="text/babel" src="/assets/akg_ess/missed-checkout.jsx?v=71"></script>
 
 <script type="text/babel">
 // Production runtime defaults (tweaks panel removed). Persisted client-side
@@ -137,6 +137,7 @@ function App() {
   });
   const [isOffline, setIsOffline] = React.useState(() => !navigator.onLine);
   const [loggedIn, setLoggedIn] = React.useState(false);
+  const [checking, setChecking] = React.useState(true); // session probe in flight
   const [notifsOpen, setNotifsOpen] = React.useState(false);
 
   // Persist the outbox to localStorage on every change so queued items
@@ -171,19 +172,36 @@ function App() {
     };
   }, []);
 
-  // Hydrate session on first mount — try to fetch the current user.
-  // If 403/401 the login screen is rendered.
+  // Hydrate session on first mount — confirm the current user.
+  // Only a definitive 401/403 means "not signed in" → show login. A
+  // transient failure (network blip, timeout, cold-start 5xx) is retried a
+  // few times so a valid session is never bounced to the login screen.
   React.useEffect(() => {
+    let cancelled = false;
     (async () => {
-      try {
-        const u = await window.frappe.getCurrentUser();
-        if (u && u.employee) {
-          setLoggedIn(true);
-          if (u.is_manager) setRole('manager');
-          window.frappe.hydrateLegacyGlobals().catch(() => {});
+      for (let attempt = 0; attempt < 4 && !cancelled; attempt++) {
+        try {
+          const u = await window.frappe.getCurrentUser();
+          if (!cancelled && u && u.employee) {
+            setLoggedIn(true);
+            if (u.is_manager) setRole('manager');
+            window.frappe.hydrateLegacyGlobals().catch(() => {});
+          }
+          if (!cancelled) setChecking(false);
+          return;
+        } catch (e) {
+          const status = e && e.status;
+          const definitelyOut = status === 401 || status === 403;
+          if (definitelyOut || attempt === 3) {
+            if (!cancelled) setChecking(false); // genuinely signed out, or gave up → login
+            return;
+          }
+          // transient — wait (0.7s, 1.4s, 2.1s) then retry, keeping the splash up
+          await new Promise((r) => setTimeout(r, 700 * (attempt + 1)));
         }
-      } catch (e) { /* not signed in — show login */ }
+      }
     })();
+    return () => { cancelled = true; };
   }, []);
 
   React.useEffect(() => {
@@ -220,6 +238,18 @@ function App() {
   // Geofence mode is now driven by real GPS; the prototype "inside/outside"
   // toggle is gone. Components fall back to live geolocation.
   const geofenceMode = 'live';
+
+  // While confirming the session, show a neutral splash (not the login
+  // screen) so a valid session never flashes "logged out" on reload.
+  if (checking) {
+    return (
+      <I18nCtx.Provider value={i18n}>
+        <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg, #0b1b3a)' }}>
+          <span className="spinner" style={{ width: 28, height: 28 }} />
+        </div>
+      </I18nCtx.Provider>
+    );
+  }
 
   if (!loggedIn) {
     return (
