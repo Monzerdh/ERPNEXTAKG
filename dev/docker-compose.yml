@@ -14,6 +14,11 @@ x-customizable-image: &customizable_image
 
 x-backend-defaults: &backend_defaults
   <<: *customizable_image
+  # akg_ess isn't pip-installed in the image (it's bind-mounted), and a
+  # runtime `pip install -e` is wiped whenever the container is recreated.
+  # Put the app on PYTHONPATH so `import akg_ess` works durably everywhere.
+  environment:
+    PYTHONPATH: /home/frappe/frappe-bench/apps/akg_ess
   volumes:
     - sites:/home/frappe/frappe-bench/sites
     # Live-mount the working copy of akg_ess (edit on host -> live in bench).
@@ -118,7 +123,13 @@ services:
 
   frontend:
     <<: *customizable_image
-    command: ["nginx-entrypoint.sh"]
+    # akg_ess isn't baked into the image, so its assets aren't in the
+    # baked assets dir nginx serves. Link the mounted app's public folder
+    # in on every start (survives restarts/recreates), then run nginx.
+    command:
+      - bash
+      - -c
+      - "ln -sfn /home/frappe/frappe-bench/apps/akg_ess/akg_ess/public /home/frappe/frappe-bench/assets/akg_ess; exec nginx-entrypoint.sh"
     environment:
       BACKEND: backend:8000
       SOCKETIO: websocket:9000
@@ -130,6 +141,9 @@ services:
       CLIENT_MAX_BODY_SIZE: 50m
     volumes:
       - sites:/home/frappe/frappe-bench/sites
+      # nginx serves /assets/akg_ess/* from the sites/assets symlink, which
+      # points into this app dir — so the frontend needs it mounted too.
+      - ${AKG_ESS_SRC:-..}:/home/frappe/frappe-bench/apps/akg_ess
     depends_on:
       backend: { condition: service_started }
       websocket: { condition: service_started }
