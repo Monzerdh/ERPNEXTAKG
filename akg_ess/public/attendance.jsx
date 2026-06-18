@@ -57,17 +57,23 @@ function SiteAttendanceScreen({ geofenceMode, offlineQueue, setOfflineQueue, isO
   const todaysPendingV = (myViolations || []).filter(
     (v) => v.status === 'Pending' && ((v.date === today) || (v.time || '').startsWith(today)),
   );
-  const dayEvents = [
-    ...todays.map((c) => ({ kind: (c.log_type || '').toUpperCase(), time: c.time, project: c.project, pending: false })),
-    ...todaysPendingV.map((v) => ({ kind: (v.log_type || '').toUpperCase(), time: v.time, project: v.selected_project, pending: true })),
-  ].sort((a, b) => (a.time || '').localeCompare(b.time || ''));
-  const lastEvent = dayEvents[dayEvents.length - 1] || null;
-  const isCheckedIn = !!lastEvent && lastEvent.kind === 'IN';
-  // Day is "closed" (locked till tomorrow) once the latest event is an OUT.
-  const dayClosed = !!lastEvent && lastEvent.kind === 'OUT';
+  // Single session per day: an OUT (recorded OR pending off-zone approval)
+  // ends the day — full stop. State is derived by PRESENCE of an OUT/IN,
+  // never by comparing timestamps across record types (check-in times and
+  // violation times can differ; don't rely on their ordering).
+  const upper = (s) => (s || '').toUpperCase();
+  const inEvents = [
+    ...todays.filter((c) => upper(c.log_type) === 'IN').map((c) => ({ time: c.time, project: c.project, pending: false })),
+    ...todaysPendingV.filter((v) => upper(v.log_type) === 'IN').map((v) => ({ time: v.time, project: v.selected_project, pending: true })),
+  ];
+  const hasOut = todays.some((c) => upper(c.log_type) === 'OUT') || todaysPendingV.some((v) => upper(v.log_type) === 'OUT');
+  const hasIn = inEvents.length > 0;
+  const isCheckedIn = hasIn && !hasOut;
+  // Day is "closed" (locked till tomorrow) once an OUT exists.
+  const dayClosed = hasOut;
   // Effective open check-in: a recorded open session if there is one, else a
   // synthetic session from the latest (possibly pending) IN event.
-  const lastInEvent = [...dayEvents].reverse().find((e) => e.kind === 'IN') || null;
+  const lastInEvent = inEvents.slice().sort((a, b) => (a.time || '').localeCompare(b.time || '')).pop() || null;
   const realOpen = sessions.find((s) => !s.out) || null;
   const openSession = isCheckedIn
     ? (realOpen || (lastInEvent ? { in: { time: lastInEvent.time }, project: lastInEvent.project, out: null, pending: lastInEvent.pending } : null))

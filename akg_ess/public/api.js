@@ -171,8 +171,20 @@
     return _currentUserCache;
   }
 
-  const nowDatetime = () => new Date().toISOString().slice(0, 19).replace('T', ' ');
-  const todayISO = () => new Date().toISOString().slice(0, 10);
+  // IMPORTANT: stamp times in LOCAL (device) time, not UTC. The ERPNext
+  // site runs in Asia/Dubai and stores naive local datetimes; sending
+  // toISOString() (UTC) made check-ins and violations land 4h apart and
+  // broke event ordering + hours. getHours()/getDate() use the device tz,
+  // which for AKG matches the site.
+  const _pad = (n) => String(n).padStart(2, '0');
+  const nowDatetime = () => {
+    const d = new Date();
+    return `${d.getFullYear()}-${_pad(d.getMonth() + 1)}-${_pad(d.getDate())} ${_pad(d.getHours())}:${_pad(d.getMinutes())}:${_pad(d.getSeconds())}`;
+  };
+  const todayISO = () => {
+    const d = new Date();
+    return `${d.getFullYear()}-${_pad(d.getMonth() + 1)}-${_pad(d.getDate())}`;
+  };
   const localId = () => `LID-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
   // Stable per-leave-type accent.  Standard names (Annual / Sick / Casual /
