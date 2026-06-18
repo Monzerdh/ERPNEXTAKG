@@ -97,6 +97,15 @@ def _parse_json_block(text):
 
 
 @frappe.whitelist()
+def get_csrf_token():
+    """Return (and lazily generate + save) this session's CSRF token so the
+    PWA can send it on POST/PUT/DELETE. Frappe enforces CSRF only when the
+    session has a token, and the static /ess page doesn't inject one — so
+    the client fetches it here and echoes it in X-Frappe-CSRF-Token."""
+    return frappe.sessions.get_csrf_token()
+
+
+@frappe.whitelist()
 def get_session_profile():
     """One-shot bootstrap: returns everything the PWA needs to populate the
     home screen — current user, linked Employee, manager flag.

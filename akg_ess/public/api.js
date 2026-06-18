@@ -17,13 +17,35 @@
   // ───────────────────────────────────────────────────────────────────
   // HTTP helpers
   // ───────────────────────────────────────────────────────────────────
+  const UNSAFE = { POST: 1, PUT: 1, DELETE: 1 };
+
   function getCsrfToken() {
     if (window.csrf_token) return window.csrf_token;
     const m = document.cookie.match(/csrf_token=([^;]+)/);
     return m ? decodeURIComponent(m[1]) : null;
   }
 
+  // Frappe enforces CSRF only once the session has a token; the static /ess
+  // page never injects one, so the client fetches it (a safe GET) before the
+  // first state-changing request and caches it on window. Without this, a
+  // POST/PUT/DELETE can fail with "Invalid Request" the moment a token gets
+  // generated into the session mid-use.
+  let _csrfPromise = null;
+  async function ensureCsrf() {
+    if (getCsrfToken()) return;
+    if (!_csrfPromise) {
+      _csrfPromise = fetch('/api/method/akg_ess.api.get_csrf_token', {
+        method: 'GET', headers: { Accept: 'application/json' }, credentials: 'include',
+      })
+        .then((r) => r.json()).then((d) => { if (d && d.message) window.csrf_token = d.message; })
+        .catch(() => {})
+        .finally(() => { _csrfPromise = null; });
+    }
+    await _csrfPromise;
+  }
+
   async function http(method, path, { body, params, isForm } = {}) {
+    if (UNSAFE[method]) await ensureCsrf();
     let url = path;
     if (params && Object.keys(params).length) {
       const qs = new URLSearchParams();
