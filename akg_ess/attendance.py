@@ -21,49 +21,150 @@ OVERTIME_THRESHOLD_HOURS = 10.0
 
 
 def on_checkin_after_insert(doc, method=None):
-    """Employee Checkin after_insert hook.
-       IN  -> populate ESS Daily Attendance as 'Checked In' (no HR yet).
-       OUT -> compute Present + post HR Attendance.
-    Off-zone check-ins never reach here until approved (they're held in a
-    Geofence Violation), so any checkin that exists is in-zone or approved.
+    """Employee Checkin after_insert hook — recompute the whole day.
+
+    Only in-zone or manager-approved punches ever become an Employee
+    Checkin; out-of-zone punches stay as a (pending) Geofence Violation
+    until approved. So any checkin that exists here is authoritative.
     """
     try:
-        lt = (doc.log_type or "").upper()
-        if lt == "IN":
-            record_checkin_in(doc)
-        elif lt == "OUT":
-            compute_daily_attendance(doc)
+        recompute_day(doc.employee, frappe.utils.getdate(doc.time))
     except Exception:
         # Never block a check-in/out on attendance bookkeeping — log + move on.
         frappe.log_error(frappe.get_traceback(), "AKG ESS · on_checkin_after_insert")
 
 
-def record_checkin_in(in_doc):
-    """On check-IN, open the day's ESS Daily Attendance row as 'Checked In'
-    (in progress). No HR Attendance yet — that waits for check-out."""
-    from frappe.utils import getdate
-    if not in_doc.employee or not in_doc.time:
+def recompute_day(employee, day):
+    """Single source of truth for a day's ESS Daily Attendance + HR posting.
+
+    Derives the day from the employee's *actual* Employee Checkins (in-zone
+    or manager-approved) plus any pending holds (geofence / missed-checkout):
+
+      - IN + OUT, no hold   -> Present  + standard HR Attendance posted
+      - IN + OUT, held      -> Pending Approval (HR withheld)
+      - IN only,  no hold   -> Checked In (in progress, no HR)
+      - IN only,  held      -> Pending Approval
+      - OUT only (IN still pending approval) -> Pending Approval (HR withheld)
+      - no real punch, hold -> Pending Approval placeholder (from violation)
+      - no real punch, clear-> remove any stale pending placeholder
+
+    HR "Present" is posted only when both an IN and an OUT exist and the day
+    is not on hold — i.e. on (effective) check-out. Absent is posted by the
+    daily scheduler (mark_absentees) for days with no entry.
+    """
+    from frappe.utils import getdate, get_datetime
+    if not employee or not day:
         return
-    day = getdate(in_doc.time)
-    existing = frappe.db.get_value(
-        "ESS Daily Attendance", {"employee": in_doc.employee, "date": day},
-        ["name", "status"], as_dict=True,
-    )
-    # Don't downgrade a day that already has a check-out / decision.
-    if existing and existing.status in ("Present", "Pending Approval", "Missed Checkout"):
+    day = getdate(day)
+    day_start = f"{day} 00:00:00"
+    day_end = f"{day} 23:59:59"
+
+    def _one(lt, order):
+        rows = frappe.get_all(
+            "Employee Checkin",
+            filters=[
+                ["employee", "=", employee],
+                ["log_type", "=", lt],
+                ["time", ">=", day_start],
+                ["time", "<=", day_end],
+            ],
+            fields=["name", "time", "project", "scope_of_work"],
+            order_by=f"time {order}",
+            limit=1,
+        )
+        return rows[0] if rows else None
+
+    in_row = _one("IN", "asc")
+    out_row = _one("OUT", "desc")
+    pending = _day_has_pending_hold(employee, day)
+
+    # No real punch yet.
+    if not in_row and not out_row:
+        if pending:
+            _upsert_pending_from_violation(employee, day)
+        else:
+            # Nothing punched, nothing pending — drop a stale placeholder row
+            # (e.g. a rejected off-zone punch). Never touch Present/Absent.
+            nm = frappe.db.get_value(
+                "ESS Daily Attendance",
+                {"employee": employee, "date": day, "status": "Pending Approval"}, "name",
+            )
+            if nm:
+                frappe.delete_doc("ESS Daily Attendance", nm, force=1, ignore_permissions=True)
+                frappe.db.commit()
         return
-    # Off-zone check-in (a violation was already filed for the day) opens the
-    # row as Pending Approval; an in-zone check-in is simply Checked In.
-    status = "Pending Approval" if _day_has_pending_hold(in_doc.employee, day) else "Checked In"
+
+    has_ot = bool(frappe.db.get_value("Employee", employee, "has_overtime"))
+
+    # Completed day — both punches present.
+    if in_row and out_row:
+        in_dt = get_datetime(in_row["time"])
+        out_dt = get_datetime(out_row["time"])
+        hb = _hours_breakdown(in_dt, out_dt, has_ot, in_row.get("project"), out_row.get("project"))
+        status = "Pending Approval" if pending else "Present"
+        values = {
+            "employee": employee, "date": day, "status": status,
+            "scope": out_row.get("scope_of_work") or in_row.get("scope_of_work"),
+            "check_in_time": in_row["time"], "check_out_time": out_row["time"],
+            "check_in_project": in_row.get("project"), "check_out_project": out_row.get("project"),
+            "has_overtime": int(has_ot),
+            "in_checkin": in_row["name"], "out_checkin": out_row["name"],
+            **hb,
+        }
+        _upsert_attendance(employee, day, values)
+        if status == "Present":
+            _sync_standard_attendance(
+                employee, day, "Present", in_row["time"], out_row["time"], hb["total_hours"],
+                link_checkins=[in_row["name"], out_row["name"]],
+            )
+        return
+
+    # IN only — in progress. Never Present, never HR.
+    if in_row and not out_row:
+        status = "Pending Approval" if pending else "Checked In"
+        values = {
+            "employee": employee, "date": day, "status": status,
+            "scope": in_row.get("scope_of_work"),
+            "check_in_time": in_row["time"], "check_in_project": in_row.get("project"),
+            "in_checkin": in_row["name"],
+        }
+        _upsert_attendance(employee, day, values)
+        return
+
+    # OUT only — the IN is still a pending off-zone violation. Hold the day
+    # (no HR) until the IN is approved, then this recomputes to Present.
     values = {
-        "employee": in_doc.employee,
-        "date": day,
-        "status": status,
-        "check_in_time": in_doc.time,
-        "check_in_project": in_doc.project,
-        "in_checkin": in_doc.name,
+        "employee": employee, "date": day, "status": "Pending Approval",
+        "scope": out_row.get("scope_of_work"),
+        "check_out_time": out_row["time"], "check_out_project": out_row.get("project"),
+        "out_checkin": out_row["name"],
     }
-    _upsert_attendance(in_doc.employee, day, values)
+    _upsert_attendance(employee, day, values)
+
+
+def _upsert_pending_from_violation(employee, day):
+    """Surface an out-of-zone punch that has no Employee Checkin yet as a
+    Pending Approval row, so the day shows in the app/report while it waits
+    for the manager. Nothing posts to HR until the punch is approved."""
+    vs = frappe.get_all(
+        "Geofence Violation",
+        filters=[["employee", "=", employee], ["date", "=", day], ["status", "=", "Pending"]],
+        fields=["log_type", "time", "selected_project", "scope_of_work"],
+        order_by="time asc",
+    )
+    if not vs:
+        return
+    vin = next((v for v in vs if (v.log_type or "").upper() == "IN"), None)
+    vout = next((v for v in vs if (v.log_type or "").upper() == "OUT"), None)
+    values = {"employee": employee, "date": day, "status": "Pending Approval"}
+    if vin:
+        values["check_in_time"] = vin.time
+        values["check_in_project"] = vin.selected_project
+    if vout:
+        values["check_out_time"] = vout.time
+        values["check_out_project"] = vout.selected_project
+        values["scope"] = vout.scope_of_work
+    _upsert_attendance(employee, day, values)
 
 
 def _day_has_pending_hold(employee, day):
@@ -76,69 +177,6 @@ def _day_has_pending_hold(employee, day):
         if frappe.db.exists("Missed Checkout", {"employee": employee, "date": day, "status": "Pending"}):
             return True
     return False
-
-
-def compute_daily_attendance(out_doc):
-    """Build / refresh the ESS Daily Attendance row for the OUT's day."""
-    from frappe.utils import getdate, get_datetime
-
-    employee = out_doc.employee
-    if not employee or not out_doc.time:
-        return
-
-    day = getdate(out_doc.time)
-    day_start = f"{day} 00:00:00"
-    day_end = f"{day} 23:59:59"
-
-    # Find the single IN for this employee on this day.
-    in_rows = frappe.get_all(
-        "Employee Checkin",
-        filters=[
-            ["employee", "=", employee],
-            ["log_type", "=", "IN"],
-            ["time", ">=", day_start],
-            ["time", "<=", day_end],
-        ],
-        fields=["name", "time", "project"],
-        order_by="time asc",
-        limit=1,
-    )
-    if not in_rows:
-        return  # OUT without IN — guard normally blocks this; nothing to compute.
-    in_row = in_rows[0]
-
-    in_dt = get_datetime(in_row["time"])
-    out_dt = get_datetime(out_doc.time)
-    has_ot = bool(frappe.db.get_value("Employee", employee, "has_overtime"))
-    hb = _hours_breakdown(in_dt, out_dt, has_ot, in_row.get("project"), out_doc.project)
-
-    status = "Pending Approval" if _day_has_pending_hold(employee, day) else "Present"
-
-    values = {
-        "employee": employee,
-        "date": day,
-        "status": status,
-        "scope": getattr(out_doc, "scope_of_work", None),
-        "check_in_time": in_row["time"],
-        "check_out_time": out_doc.time,
-        "check_in_project": in_row.get("project"),
-        "check_out_project": out_doc.project,
-        "has_overtime": int(has_ot),
-        "in_checkin": in_row["name"],
-        "out_checkin": out_doc.name,
-        **hb,
-    }
-    _upsert_attendance(employee, day, values)
-
-    # Post the standard ERPNext Attendance only when the day is final
-    # (Present). If the day is on hold for an off-zone review, HR Attendance
-    # is withheld — it gets posted when the manager approves (see
-    # refresh_attendance_status, called from the geofence approval hook).
-    if status == "Present":
-        _sync_standard_attendance(
-            employee, day, "Present", in_row["time"], out_doc.time, hb["total_hours"],
-            link_checkins=[in_row["name"], out_doc.name],
-        )
 
 
 def _hours_breakdown(in_dt, out_dt, has_ot, in_proj, out_proj):
@@ -225,24 +263,9 @@ def upsert_missed_pending(employee, day, in_time, in_project, in_checkin,
 
 
 def refresh_attendance_status(employee, day):
-    """Re-evaluate the status of an existing attendance row — called after a
-    geofence violation / missed-checkout decision releases the day."""
-    name = frappe.db.get_value("ESS Daily Attendance", {"employee": employee, "date": day}, "name")
-    if not name:
-        return
-    status = "Pending Approval" if _day_has_pending_hold(employee, day) else "Present"
-    frappe.db.set_value("ESS Daily Attendance", name, "status", status)
-    # Day released → ensure the standard Attendance is posted/linked.
-    if status == "Present":
-        row = frappe.db.get_value(
-            "ESS Daily Attendance", name,
-            ["check_in_time", "check_out_time", "total_hours", "in_checkin", "out_checkin"], as_dict=True,
-        ) or {}
-        _sync_standard_attendance(
-            employee, day, "Present",
-            row.get("check_in_time"), row.get("check_out_time"), row.get("total_hours") or 0,
-            link_checkins=[row.get("in_checkin"), row.get("out_checkin")],
-        )
+    """Back-compat shim — re-evaluate a day after a geofence / missed-checkout
+    decision. Delegates to recompute_day (the single source of truth)."""
+    recompute_day(employee, day)
 
 
 def _attendance_enabled():
@@ -306,24 +329,31 @@ def _sync_standard_attendance(employee, day, status, in_time=None, out_time=None
         frappe.log_error(frappe.get_traceback(), "AKG ESS · sync standard attendance")
 
 
-def mark_absentees():
-    """Scheduler — runs daily ~01:00 site time. For yesterday, create an
-    Absent ESS Daily Attendance row for each ESS-enabled active employee
-    who had no check-in and no approved leave. Sundays (weekend) skipped.
+def mark_absentees(for_date=None):
+    """Scheduler — runs daily ~01:00 site time. For the target day (default
+    yesterday), create an Absent ESS Daily Attendance row AND post a standard
+    HR Attendance 'Absent' for each ESS-enabled active employee who had no
+    entry and no approved leave. Sundays (weekend) skipped.
 
-    Conservative scope: only employees with a linked user_id (i.e. those
-    expected to use the app). Adjust the filter if labourers without app
-    accounts should also be tracked.
+    A day is treated as "has an entry" if any of these exist for it: an
+    ESS Daily Attendance row, an Employee Checkin, or a pending hold
+    (geofence / missed checkout). Only then is Absent skipped.
+
+    Pass for_date ('YYYY-MM-DD') to backfill a specific day, e.g.:
+        bench --site <site> execute akg_ess.attendance.mark_absentees \
+              --kwargs "{'for_date':'2026-06-17'}"
     """
     from frappe.utils import add_days, getdate
 
-    today = frappe.utils.nowdate()
-    yesterday = add_days(today, -1)
-    day = getdate(yesterday)
+    target = for_date or add_days(frappe.utils.nowdate(), -1)
+    day = getdate(target)
+    target = str(day)
+    day_start = f"{target} 00:00:00"
+    day_end = f"{target} 23:59:59"
 
     # AKG default weekend = Sunday only (weekday() == 6).
     if day.weekday() == 6:
-        return {"created": 0, "skipped": "weekend", "date": str(yesterday)}
+        return {"created": 0, "skipped": "weekend", "date": target}
 
     employees = frappe.get_all(
         "Employee",
@@ -335,7 +365,16 @@ def mark_absentees():
     created = 0
     for e in employees:
         emp = e["name"]
-        if frappe.db.exists("ESS Daily Attendance", {"employee": emp, "date": yesterday}):
+        # Has an ESS row already (Present / Checked In / Pending / Absent)?
+        if frappe.db.exists("ESS Daily Attendance", {"employee": emp, "date": target}):
+            continue
+        # Has any real punch for the day?
+        if frappe.db.exists("Employee Checkin", [
+            ["employee", "=", emp], ["time", ">=", day_start], ["time", "<=", day_end],
+        ]):
+            continue
+        # Day on hold (out-of-zone punch awaiting approval)?
+        if _day_has_pending_hold(emp, day):
             continue
         # Skip if covered by an approved leave.
         on_leave = frappe.db.sql("""
@@ -343,14 +382,14 @@ def mark_absentees():
             WHERE employee = %s AND status = 'Approved'
               AND %s BETWEEN from_date AND to_date
             LIMIT 1
-        """, (emp, yesterday))
+        """, (emp, target))
         if on_leave:
             continue
         try:
             doc = frappe.get_doc({
                 "doctype": "ESS Daily Attendance",
                 "employee": emp,
-                "date": yesterday,
+                "date": target,
                 "status": "Absent",
                 "total_hours": 0,
                 "normal_hours": 0,
@@ -360,13 +399,13 @@ def mark_absentees():
             })
             doc.flags.ignore_permissions = True
             doc.insert()
-            _sync_standard_attendance(emp, yesterday, "Absent")
+            _sync_standard_attendance(emp, target, "Absent")
             created += 1
         except Exception:
             frappe.log_error(frappe.get_traceback(), "AKG ESS · mark_absentees")
     if created:
         frappe.db.commit()
-    return {"created": created, "date": str(yesterday)}
+    return {"created": created, "date": target}
 
 
 @frappe.whitelist()

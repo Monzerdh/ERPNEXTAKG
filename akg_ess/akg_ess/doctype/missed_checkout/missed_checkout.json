@@ -18,7 +18,7 @@
   "section_proposed",
   "proposed_out_time", "reason",
   "column_break_3",
-  "edited_out_time",
+  "edited_out_time", "scope_of_work",
   "section_decision",
   "status",
   "approver", "approver_comment", "approved_on",
@@ -47,6 +47,7 @@
   {"fieldname": "reason",              "fieldtype": "Small Text",     "label": "Reason"},
   {"fieldname": "column_break_3",      "fieldtype": "Column Break"},
   {"fieldname": "edited_out_time",     "fieldtype": "Data",           "label": "Manager-edited out time (HH:MM)"},
+  {"fieldname": "scope_of_work",       "fieldtype": "Link",           "options": "Scope of Work", "label": "Scope of Work", "description": "Scope the manager assigns for the rectified day. Carried onto the OUT check-in created on approval."},
 
   {"fieldname": "section_decision",    "fieldtype": "Section Break",  "label": "Decision"},
   {"fieldname": "status",              "fieldtype": "Select",         "options": "Pending\nApproved\nRejected\nUnsubmitted", "default": "Unsubmitted", "label": "Status", "in_list_view": 1, "in_standard_filter": 1, "reqd": 1, "search_index": 1},

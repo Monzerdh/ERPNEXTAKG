@@ -17,17 +17,23 @@ function SiteAttendanceScreen({ geofenceMode, offlineQueue, setOfflineQueue, isO
   const greeting = useGreeting();
   const [sites, setSites] = React.useState([]);
   const [checkins, setCheckins] = React.useState([]);
+  const [myViolations, setMyViolations] = React.useState([]);
   const [loading, setLoading] = React.useState(true);
   const [acting, setActing] = React.useState(false);
   const [checkoutModal, setCheckoutModal] = React.useState(null); // { project, openSession }
   const [outsideZoneModal, setOutsideZoneModal] = React.useState(null); // { type: 'IN'|'OUT', payload, distance, nearest, onConfirm }
   const [holdStatus, setHoldStatus] = React.useState('clear'); // 'clear'|'pending'|'approved'|'rejected'
 
+  const reloadViolations = React.useCallback(() => {
+    return window.frappe.getMyViolations().then((v) => { setMyViolations(v || []); return v; }).catch(() => []);
+  }, []);
+
   React.useEffect(() => {
     Promise.all([
       window.frappe.getActiveSites(),
       window.frappe.getMyCheckins(),
-    ]).then(([s, c]) => { setSites(s); setCheckins(c); setLoading(false); });
+      window.frappe.getMyViolations().catch(() => []),
+    ]).then(([s, c, v]) => { setSites(s); setCheckins(c); setMyViolations(v || []); setLoading(false); });
   }, []);
 
   // Refresh hold status whenever checkins change
@@ -41,13 +47,31 @@ function SiteAttendanceScreen({ geofenceMode, offlineQueue, setOfflineQueue, isO
   const todays = checkins
     .filter((c) => c.time.startsWith(today))
     .sort((a, b) => a.time.localeCompare(b.time));
-  // Pair into sessions
+  // Pair recorded checkins into sessions (used for hours / timesheet display).
   const sessions = pairSessions(todays, sites);
-  const openSession = sessions.find((s) => !s.out);
-  const isCheckedIn = !!openSession;
-  // Single-session model: once today's IN+OUT pair exists and nothing is
-  // open, the day is locked (no second check-in until tomorrow).
-  const dayClosed = !isCheckedIn && sessions.some((s) => s.out);
+
+  // Out-of-zone punches record NOTHING until the manager approves — they
+  // live as a pending Geofence Violation. The employee must still be able to
+  // check out, so the current state is derived from recorded checkins AND
+  // today's pending violations (whichever event is latest wins).
+  const todaysPendingV = (myViolations || []).filter(
+    (v) => v.status === 'Pending' && ((v.date === today) || (v.time || '').startsWith(today)),
+  );
+  const dayEvents = [
+    ...todays.map((c) => ({ kind: (c.log_type || '').toUpperCase(), time: c.time, project: c.project, pending: false })),
+    ...todaysPendingV.map((v) => ({ kind: (v.log_type || '').toUpperCase(), time: v.time, project: v.selected_project, pending: true })),
+  ].sort((a, b) => (a.time || '').localeCompare(b.time || ''));
+  const lastEvent = dayEvents[dayEvents.length - 1] || null;
+  const isCheckedIn = !!lastEvent && lastEvent.kind === 'IN';
+  // Day is "closed" (locked till tomorrow) once the latest event is an OUT.
+  const dayClosed = !!lastEvent && lastEvent.kind === 'OUT';
+  // Effective open check-in: a recorded open session if there is one, else a
+  // synthetic session from the latest (possibly pending) IN event.
+  const lastInEvent = [...dayEvents].reverse().find((e) => e.kind === 'IN') || null;
+  const realOpen = sessions.find((s) => !s.out) || null;
+  const openSession = isCheckedIn
+    ? (realOpen || (lastInEvent ? { in: { time: lastInEvent.time }, project: lastInEvent.project, out: null, pending: lastInEvent.pending } : null))
+    : null;
 
   // Live GPS — refresh on mount and every 30s. Components render a neutral
   // "locating…" state while myPos is null.
@@ -162,41 +186,34 @@ function SiteAttendanceScreen({ geofenceMode, offlineQueue, setOfflineQueue, isO
     }
   };
 
-  // Off-zone IN/OUT: record the real punch (so the employee can finish the
-  // day) AND file a Geofence Violation that holds the official attendance
-  // (ESS Daily + HR) as Pending Approval until the manager approves.
+  // Off-zone IN/OUT: record NOTHING official — file a Geofence Violation only
+  // and send it to the manager. No Employee Checkin, no ESS/HR attendance is
+  // posted until the manager approves. The employee is never locked out: the
+  // pending violation makes the app treat them as checked-in/out so the next
+  // action stays available.
   const onSubmitViolation = async ({ selected_project, reason }) => {
     setActing(true);
     const ctx = outsideZoneModal;
-    const payload = {
+    const vpayload = {
       log_type: ctx.type,
-      latitude: myPos.lat, longitude: myPos.lng,
-      project: selected_project, accuracy: myPos.accuracy,
+      distance_m: ctx.distance,
+      nearest_site: ctx.nearest?.name,
+      selected_project,
       scope_of_work: ctx.type === 'OUT' ? (ctx.scope_of_work || null) : null,
+      reason,
+      actual_lat: myPos.lat, actual_lng: myPos.lng, accuracy: myPos.accuracy,
     };
     try {
-      // File the violation FIRST so the day is on hold before the punch
-      // posts — the check-in's compute then keeps official attendance
-      // Pending Approval (no brief Present/HR flash).
-      await window.frappe.createViolation({
-        log_type: ctx.type,
-        distance_m: ctx.distance,
-        nearest_site: ctx.nearest?.name,
-        selected_project,
-        scope_of_work: payload.scope_of_work,
-        reason,
-        actual_lat: myPos.lat, actual_lng: myPos.lng,
-      });
-      const row = await window.frappe.createCheckin(payload);
-      setCheckins((c) => [row, ...c]);
+      await window.frappe.createViolation(vpayload);
+      await reloadViolations();
       const today = new Date().toISOString().slice(0, 10);
       const hs = await window.frappe.getDayHoldStatus(window.CURRENT_USER.employee, today);
       setHoldStatus(hs);
-      toast(`${ctx.type === 'IN' ? t.check_in : t.check_out} ✓ · ${t.pending_review}`, 'warn');
+      toast(`${ctx.type === 'IN' ? t.check_in : t.check_out} · ${t.pending_review}`, 'warn');
       setOutsideZoneModal(null);
     } catch (e) {
       if (window.frappe.isNetworkError && window.frappe.isNetworkError(e) && setOfflineQueue) {
-        setOfflineQueue((q) => [...q, { ...payload, _kind: 'checkin', queued_at: new Date().toISOString() }]);
+        setOfflineQueue((q) => [...q, { ...vpayload, _kind: 'violation', queued_at: new Date().toISOString() }]);
         toast(`${ctx.type === 'IN' ? t.check_in : t.check_out} — saved, will sync when online`, 'warn');
         setOutsideZoneModal(null);
       } else {
@@ -220,8 +237,10 @@ function SiteAttendanceScreen({ geofenceMode, offlineQueue, setOfflineQueue, isO
       try {
         if (p._kind === 'leave') await window.frappe.submitLeave(p);
         else if (p._kind === 'claim') await window.frappe.submitClaim(p);
+        else if (p._kind === 'violation') await window.frappe.createViolation(p);
       } catch (e) {}
     }
+    if (others.some((p) => p._kind === 'violation')) await reloadViolations();
     const total = offlineQueue.length;
     setOfflineQueue([]);
     if (total > 0) {
@@ -292,7 +311,9 @@ function SiteAttendanceScreen({ geofenceMode, offlineQueue, setOfflineQueue, isO
             <div style={{ flex: 1, minWidth: 0 }}>
               <div className="office-done-title">{t.day_complete_title}</div>
               <div className="office-done-sub">
-                {fmtTime(firstIn?.time)} → {fmtTime(lastOut?.time)} · {(totalRaw / 60).toFixed(1)}h · {t.day_complete_sub}
+                {holdStatus === 'pending'
+                  ? t.pending_review
+                  : `${fmtTime(firstIn?.time)} → ${fmtTime(lastOut?.time)} · ${(totalRaw / 60).toFixed(1)}h · ${t.day_complete_sub}`}
               </div>
             </div>
             <Icon name="shield" size={18} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />

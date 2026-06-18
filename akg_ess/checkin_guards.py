@@ -77,7 +77,23 @@ def enforce_single_daily(doc, method=None):
                 title=_("Already checked out"),
             )
 
-    # Reject OUT before any IN on the same date.
+    # Also block a punch that duplicates a still-pending out-of-zone one
+    # (recorded as a Geofence Violation, not yet an Employee Checkin).
+    if _has_pending_violation(doc.employee, day, log_type):
+        if log_type == "IN":
+            frappe.throw(
+                _("You already have a check-in awaiting approval for today."),
+                title=_("Already checked in"),
+            )
+        else:
+            frappe.throw(
+                _("You already have a check-out awaiting approval for today."),
+                title=_("Already checked out"),
+            )
+
+    # Reject OUT before any IN on the same date — unless the IN is an
+    # out-of-zone punch awaiting approval (the employee did check in; the
+    # punch is just pending). Never block a check-out.
     if log_type == "OUT":
         in_today = frappe.get_all(
             "Employee Checkin",
@@ -90,11 +106,22 @@ def enforce_single_daily(doc, method=None):
             fields=["name"],
             limit=1,
         )
-        if not in_today:
+        if not in_today and not _has_pending_violation(doc.employee, day, "IN"):
             frappe.throw(
                 _("Check in first before checking out."),
                 title=_("Not checked in"),
             )
+
+
+def _has_pending_violation(employee, day, log_type):
+    """True if there's a pending out-of-zone Geofence Violation of this
+    log_type for the day (a punch recorded but not yet approved)."""
+    if not frappe.db.exists("DocType", "Geofence Violation"):
+        return False
+    return bool(frappe.db.exists("Geofence Violation", {
+        "employee": employee, "date": day,
+        "log_type": (log_type or "").upper(), "status": "Pending",
+    }))
 
 
 # Back-compat alias — hooks.py referenced the old office-only name.

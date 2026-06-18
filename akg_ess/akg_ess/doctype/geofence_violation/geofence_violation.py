@@ -13,6 +13,16 @@ class GeofenceViolation(Document):
         if not self.date and self.time:
             self.date = frappe.utils.getdate(self.time)
 
+    def after_insert(self):
+        """Out-of-zone punch filed — nothing is posted to HR, but surface the
+        day as Pending Approval in the app/report (and flip an in-progress
+        'Checked In' row to held) so the state is visible while it waits."""
+        try:
+            from akg_ess.attendance import recompute_day
+            recompute_day(self.employee, frappe.utils.getdate(self.time or self.date))
+        except Exception:
+            frappe.log_error(frappe.get_traceback(), "GFV after_insert: recompute_day failed")
+
 
 def on_status_change(doc, method=None):
     """Called via doc_events. When the violation flips to Approved we
@@ -79,17 +89,24 @@ def on_status_change(doc, method=None):
         doc.db_set("approver", doc.approver, update_modified=False)
         doc.db_set("approved_on", doc.approved_on, update_modified=False)
 
-        # Release the day: now that the punch is approved, re-evaluate the
-        # ESS Daily Attendance row. If nothing else holds the day it flips to
-        # Present and the standard HR Attendance is posted/linked.
-        try:
-            from akg_ess.attendance import refresh_attendance_status
-            refresh_attendance_status(doc.employee, day)
-        except Exception:
-            frappe.log_error(frappe.get_traceback(), "GFV approve: refresh_attendance_status failed")
+        # The created checkin's after_insert already recomputed the day, but
+        # recompute once more to be safe now that this violation is no longer
+        # Pending (so the day can finalise to Present + post HR).
+        _recompute(doc.employee, day)
 
     elif doc.status == "Rejected":
         if not doc.approver:
             doc.db_set("approver", frappe.session.user, update_modified=False)
         if not doc.approved_on:
             doc.db_set("approved_on", frappe.utils.now_datetime(), update_modified=False)
+        # Rejected punch is dropped — recompute clears any stale pending
+        # placeholder for the day (or holds on a remaining pending punch).
+        _recompute(doc.employee, frappe.utils.getdate(doc.time or doc.date))
+
+
+def _recompute(employee, day):
+    try:
+        from akg_ess.attendance import recompute_day
+        recompute_day(employee, day)
+    except Exception:
+        frappe.log_error(frappe.get_traceback(), "GFV: recompute_day failed")

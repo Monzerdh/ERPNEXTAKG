@@ -79,9 +79,12 @@ def on_status_change(doc, method=None):
         "log_type": "OUT",
         "time": timestamp,
         "project": doc.site_name or None,
+        "scope_of_work": doc.get("scope_of_work") or None,
         "device_id": "ESS-MISSED-RECTIFY",
         "skip_auto_attendance": 1,
     })
     co.flags.ignore_permissions = True
     co.insert()
     frappe.db.set_value("Missed Checkout", doc.name, "out_checkin", co.name)
+    # The OUT checkin's after_insert recomputes the day (-> Present + HR
+    # Attendance once both punches exist and no hold remains).
