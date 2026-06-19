@@ -12,7 +12,7 @@
   "column_break_1",
   "status", "scope",
   "section_times",
-  "check_in_time", "check_out_time",
+  "check_in_time", "check_in_zone", "check_out_time", "check_out_zone",
   "column_break_2",
   "check_in_project", "check_out_project",
   "section_hours",
@@ -35,7 +35,9 @@
 
   {"fieldname": "section_times",      "fieldtype": "Section Break", "label": "Times"},
   {"fieldname": "check_in_time",      "fieldtype": "Datetime", "label": "Check-in Time"},
+  {"fieldname": "check_in_zone",      "fieldtype": "Select", "options": "\nInside\nOutside", "label": "Check-in Zone", "read_only": 1, "in_list_view": 1, "description": "Inside = within the project geofence. Outside = off-zone punch that required manager approval."},
   {"fieldname": "check_out_time",     "fieldtype": "Datetime", "label": "Check-out Time"},
+  {"fieldname": "check_out_zone",     "fieldtype": "Select", "options": "\nInside\nOutside", "label": "Check-out Zone", "read_only": 1, "in_list_view": 1, "description": "Inside = within the project geofence. Outside = off-zone punch that required manager approval."},
   {"fieldname": "column_break_2",     "fieldtype": "Column Break"},
   {"fieldname": "check_in_project",   "fieldtype": "Link", "options": "Project", "label": "Check-in Project"},
   {"fieldname": "check_out_project",  "fieldtype": "Link", "options": "Project", "label": "Check-out Project"},

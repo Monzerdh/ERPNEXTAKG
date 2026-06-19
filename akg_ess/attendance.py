@@ -107,6 +107,8 @@ def recompute_day(employee, day):
             "scope": out_row.get("scope_of_work") or in_row.get("scope_of_work"),
             "check_in_time": in_row["time"], "check_out_time": out_row["time"],
             "check_in_project": in_row.get("project"), "check_out_project": out_row.get("project"),
+            "check_in_zone": _zone_for(employee, day, "IN"),
+            "check_out_zone": _zone_for(employee, day, "OUT"),
             "has_overtime": int(has_ot),
             "in_checkin": in_row["name"], "out_checkin": out_row["name"],
             **hb,
@@ -126,8 +128,18 @@ def recompute_day(employee, day):
             "employee": employee, "date": day, "status": status,
             "scope": in_row.get("scope_of_work"),
             "check_in_time": in_row["time"], "check_in_project": in_row.get("project"),
+            "check_in_zone": _zone_for(employee, day, "IN"),
             "in_checkin": in_row["name"],
         }
+        # A pending off-zone OUT (no check-in row yet) — surface it so the day
+        # shows the attempted check-out + its zone while it awaits approval.
+        vout = _pending_violation(employee, day, "OUT")
+        if vout:
+            values["check_out_time"] = vout.time
+            values["check_out_project"] = vout.selected_project
+            values["check_out_zone"] = "Outside"
+            if vout.scope_of_work:
+                values["scope"] = vout.scope_of_work
         _upsert_attendance(employee, day, values)
         return
 
@@ -137,8 +149,14 @@ def recompute_day(employee, day):
         "employee": employee, "date": day, "status": "Pending Approval",
         "scope": out_row.get("scope_of_work"),
         "check_out_time": out_row["time"], "check_out_project": out_row.get("project"),
+        "check_out_zone": _zone_for(employee, day, "OUT"),
         "out_checkin": out_row["name"],
     }
+    vin = _pending_violation(employee, day, "IN")
+    if vin:
+        values["check_in_time"] = vin.time
+        values["check_in_project"] = vin.selected_project
+        values["check_in_zone"] = "Outside"
     _upsert_attendance(employee, day, values)
 
 
@@ -160,11 +178,39 @@ def _upsert_pending_from_violation(employee, day):
     if vin:
         values["check_in_time"] = vin.time
         values["check_in_project"] = vin.selected_project
+        values["check_in_zone"] = "Outside"  # a pending violation is by definition off-zone
     if vout:
         values["check_out_time"] = vout.time
         values["check_out_project"] = vout.selected_project
+        values["check_out_zone"] = "Outside"
         values["scope"] = vout.scope_of_work
     _upsert_attendance(employee, day, values)
+
+
+def _zone_for(employee, day, log_type):
+    """'Outside' if this punch came through a Geofence Violation (off-zone,
+    needed approval); 'Inside' otherwise (a direct in-zone check-in)."""
+    if frappe.db.exists("DocType", "Geofence Violation") and frappe.db.exists(
+        "Geofence Violation",
+        {"employee": employee, "date": day, "log_type": (log_type or "").upper(),
+         "status": ["in", ["Pending", "Approved"]]},
+    ):
+        return "Outside"
+    return "Inside"
+
+
+def _pending_violation(employee, day, log_type):
+    """The pending off-zone violation for a punch (no check-in row yet), or
+    None — used to surface the attempted punch + zone while it awaits review."""
+    if not frappe.db.exists("DocType", "Geofence Violation"):
+        return None
+    rows = frappe.get_all(
+        "Geofence Violation",
+        filters={"employee": employee, "date": day, "log_type": (log_type or "").upper(), "status": "Pending"},
+        fields=["time", "selected_project", "scope_of_work"],
+        order_by="time asc", limit=1,
+    )
+    return rows[0] if rows else None
 
 
 def _day_has_pending_hold(employee, day):
