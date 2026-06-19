@@ -364,7 +364,9 @@ function SiteAttendanceScreen({ geofenceMode, offlineQueue, setOfflineQueue, isO
             </span>
             <span className="checkin-button-sub truncate">
               {isCheckedIn
-                ? `${fmtTime(openSession.in.time)} · ${sessions.find((s) => s.project === openSession.project)?.siteName || ''}`
+                ? (sessions.find((s) => s.project === openSession.project)?.siteName
+                    || (window.PROJECTS || []).find((p) => p.name === openSession.project)?.project_name
+                    || openSession.project || '')
                 : (match.inside ? t.cta_check_in_sub : t.log_violation)}
             </span>
           </button>
@@ -643,9 +645,7 @@ function OfficeAttendanceScreen({ offlineQueue, setOfflineQueue, isOffline, setI
               {dayState === 'on_clock' ? t.cta_check_out : t.cta_check_in}
             </span>
             <span className="checkin-button-sub truncate">
-              {dayState === 'on_clock'
-                ? `${t.checked_in_at} ${fmtTime(todayIn.time)}`
-                : t.cta_check_in_sub}
+              {dayState === 'on_clock' ? '' : t.cta_check_in_sub}
             </span>
           </button>
         )}
