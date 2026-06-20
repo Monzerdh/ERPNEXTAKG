@@ -6,7 +6,7 @@
 //   - Other cross-origin : passthrough (CDN handles its own caching)
 // Bump CACHE_VERSION whenever you ship a new build.
 
-const CACHE_VERSION = 'akg-ess-v74';
+const CACHE_VERSION = 'akg-ess-v75';
 const STATIC_CACHE = `static-${CACHE_VERSION}`;
 const RUNTIME_CACHE = `runtime-${CACHE_VERSION}`;
 const TILE_CACHE = `osm-tiles-${CACHE_VERSION}`;
@@ -14,17 +14,17 @@ const TILE_MAX_ENTRIES = 600; // ~roughly Dubai metro at zoom 14–17
 
 const APP_SHELL = [
   '/ess',
-  '/assets/akg_ess/styles.css?v=74',
-  '/assets/akg_ess/data.js?v=74',
-  '/assets/akg_ess/api.js?v=74',
-  '/assets/akg_ess/ui.jsx?v=74',
-  '/assets/akg_ess/attendance.jsx?v=74',
-  '/assets/akg_ess/monthly-report.jsx?v=74',
-  '/assets/akg_ess/leaves.jsx?v=74',
-  '/assets/akg_ess/petty.jsx?v=74',
-  '/assets/akg_ess/profile.jsx?v=74',
-  '/assets/akg_ess/notifications.jsx?v=74',
-  '/assets/akg_ess/missed-checkout.jsx?v=74',
+  '/assets/akg_ess/styles.css?v=75',
+  '/assets/akg_ess/data.js?v=75',
+  '/assets/akg_ess/api.js?v=75',
+  '/assets/akg_ess/ui.jsx?v=75',
+  '/assets/akg_ess/attendance.jsx?v=75',
+  '/assets/akg_ess/monthly-report.jsx?v=75',
+  '/assets/akg_ess/leaves.jsx?v=75',
+  '/assets/akg_ess/petty.jsx?v=75',
+  '/assets/akg_ess/profile.jsx?v=75',
+  '/assets/akg_ess/notifications.jsx?v=75',
+  '/assets/akg_ess/missed-checkout.jsx?v=75',
   '/assets/akg_ess/manifest.webmanifest',
   '/assets/akg_ess/assets/akg-logo.png',
   '/assets/akg_ess/assets/icon-192.png',

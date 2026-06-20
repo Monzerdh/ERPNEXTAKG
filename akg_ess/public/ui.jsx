@@ -294,10 +294,50 @@ function LeafletMap({ sites = [], userPos = null, userLabel, center = null, zoom
   );
 }
 
+// Shared manager-queue controls: filter bar (employee / date range / project)
+// and a sticky bulk approve/reject bar. Used by the Geofence Violations and
+// Missed Check-outs queues.
+function TeamFilters({ team = [], projects = [], value = {}, onChange }) {
+  const t = useT();
+  const set = (k, val) => onChange({ ...value, [k]: val || '' });
+  const active = !!(value.employee || value.from_date || value.to_date || value.project);
+  const fld = { flex: '1 1 130px', minWidth: 0, fontSize: 12, padding: '7px 9px' };
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 10 }}>
+      <select className="select" style={fld} value={value.employee || ''} onChange={(e) => set('employee', e.target.value)}>
+        <option value="">{t.filter_all_employees}</option>
+        {team.map((m) => <option key={m.name || m.employee} value={m.name || m.employee}>{m.employee_name}</option>)}
+      </select>
+      <select className="select" style={fld} value={value.project || ''} onChange={(e) => set('project', e.target.value)}>
+        <option value="">{t.filter_all_projects}</option>
+        {projects.map((p) => <option key={p.name} value={p.name}>{p.project_name || p.name}</option>)}
+      </select>
+      <input type="date" className="select" style={fld} value={value.from_date || ''} max={value.to_date || undefined} onChange={(e) => set('from_date', e.target.value)} aria-label={t.from_date} title={t.from_date} />
+      <input type="date" className="select" style={fld} value={value.to_date || ''} min={value.from_date || undefined} onChange={(e) => set('to_date', e.target.value)} aria-label={t.to_date} title={t.to_date} />
+      {active && <button type="button" className="btn btn-sm btn-ghost" onClick={() => onChange({})}>{t.clear}</button>}
+    </div>
+  );
+}
+
+function BulkActionBar({ count, busy, onApprove, onReject, onClear }) {
+  const t = useT();
+  if (!count) return null;
+  return (
+    <div style={{ position: 'sticky', bottom: 8, zIndex: 5, display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px', marginTop: 12, background: 'var(--navy-800)', color: '#fff', borderRadius: 12, boxShadow: '0 6px 20px rgba(0,0,0,.18)' }}>
+      <span style={{ fontWeight: 700, fontSize: 13 }}>{count} {t.selected}</span>
+      <div style={{ marginInlineStart: 'auto', display: 'flex', gap: 8 }}>
+        <button className="btn btn-sm" style={{ background: 'transparent', color: '#fff', border: '1px solid rgba(255,255,255,.4)' }} onClick={onClear} disabled={busy}>{t.clear}</button>
+        <button className="btn btn-sm" style={{ background: 'var(--bad)', color: '#fff', border: 0 }} onClick={onReject} disabled={busy}>{busy ? '…' : `${t.reject_violation} (${count})`}</button>
+        <button className="btn btn-sm" style={{ background: 'var(--ok)', color: '#fff', border: 0 }} onClick={onApprove} disabled={busy}>{busy ? '…' : `${t.approve_release} (${count})`}</button>
+      </div>
+    </div>
+  );
+}
+
 Object.assign(window, {
   Icon, ToastProvider, useToast, Sheet, StatusChip,
   I18nCtx, useT, useLang,
   fmtTime, fmtDate, fmtDateShort, fmtMoney,
   Avatar, Skeleton, useGreeting,
-  LeafletMap,
+  LeafletMap, TeamFilters, BulkActionBar,
 });

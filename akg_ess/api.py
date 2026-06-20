@@ -648,23 +648,42 @@ def get_team():
     return members
 
 
-@frappe.whitelist()
-def get_team_violations():
-    """Manager queue for off-zone (geofence) requests — the current user's
-    team only, NEVER their own. Pending first, then recently decided."""
-    team = _team_employee_names()
+def _team_scope_filters(employee=None):
+    """Filters scoping a team queue to the current user's reports (or all-but-
+    self for System/HR Manager), with an optional single-employee filter.
+    Returns the filter list, or None when there's nothing the user can see."""
     roles = set(frappe.get_roles(frappe.session.user))
-    is_super = bool({"System Manager", "HR Manager"} & roles)
     me = _my_employee()
-    if is_super:
-        filters = [["status", "in", ["Pending", "Approved", "Rejected"]]]
+    filters = []
+    if {"System Manager", "HR Manager"} & roles:
         if me:
             filters.append(["employee", "!=", me])
     else:
+        team = _team_employee_names()
         if not team:
-            return []
-        filters = [["employee", "in", list(team)], ["status", "in", ["Pending", "Approved", "Rejected"]]]
-    rows = frappe.get_all(
+            return None
+        filters.append(["employee", "in", list(team)])
+    if employee:
+        filters.append(["employee", "=", employee])  # AND — narrows within team
+    return filters
+
+
+@frappe.whitelist()
+def get_team_violations(employee=None, from_date=None, to_date=None, project=None, limit=200, start=0):
+    """Manager queue for off-zone (geofence) requests — the current user's
+    team only, NEVER their own. Supports employee / date-range / project
+    filters and a configurable page size (load-more beyond the default)."""
+    filters = _team_scope_filters(employee)
+    if filters is None:
+        return []
+    filters.append(["status", "in", ["Pending", "Approved", "Rejected"]])
+    if from_date:
+        filters.append(["date", ">=", from_date])
+    if to_date:
+        filters.append(["date", "<=", to_date])
+    if project:
+        filters.append(["selected_project", "=", project])
+    return frappe.get_all(
         "Geofence Violation",
         filters=filters,
         fields=[
@@ -674,10 +693,39 @@ def get_team_violations():
             "reason", "status", "manager_notes", "approver", "approved_on", "linked_checkin",
         ],
         order_by="modified desc",
-        limit_page_length=200,
+        limit_page_length=int(limit or 200),
+        limit_start=int(start or 0),
         ignore_permissions=True,
     )
-    return rows
+
+
+@frappe.whitelist()
+def decide_violations(names, action, comment=None):
+    """Bulk approve/reject geofence violations. Enforces _can_approve per row
+    (never self; only the employee's manager). Uses a savepoint per row so a
+    single failure doesn't roll back the rest."""
+    names = frappe.parse_json(names) if isinstance(names, str) else (names or [])
+    target = "Approved" if action == "approve" else "Rejected"
+    done, failed = [], []
+    for i, name in enumerate(names):
+        sp = f"gfv_{i}"
+        frappe.db.savepoint(sp)
+        try:
+            doc = frappe.get_doc("Geofence Violation", name)
+            if doc.status != "Pending" or not _can_approve(frappe.session.user, doc.employee):
+                failed.append(name)
+                continue
+            doc.status = target
+            if comment:
+                doc.manager_notes = comment
+            doc.flags.ignore_permissions = True
+            doc.save(ignore_permissions=True)
+            done.append(name)
+        except Exception:
+            frappe.db.rollback(save_point=sp)
+            failed.append(name)
+    frappe.db.commit()
+    return {"done": done, "failed": failed}
 
 
 @frappe.whitelist()
@@ -704,21 +752,19 @@ def get_my_missed_checkouts():
 
 
 @frappe.whitelist()
-def get_team_missed_checkouts():
+def get_team_missed_checkouts(employee=None, from_date=None, to_date=None, project=None, limit=200, start=0):
     """Manager queue — the current user's team only, NEVER their own.
-    Pending first, then any decided rows."""
-    team = _team_employee_names()
-    roles = set(frappe.get_roles(frappe.session.user))
-    is_super = bool({"System Manager", "HR Manager"} & roles)
-    me = _my_employee()
-    if is_super:
-        filters = [["status", "in", ["Pending", "Approved", "Rejected"]]]
-        if me:
-            filters.append(["employee", "!=", me])
-    else:
-        if not team:
-            return []
-        filters = [["employee", "in", list(team)], ["status", "in", ["Pending", "Approved", "Rejected"]]]
+    Supports employee / date-range / project filters + configurable page size."""
+    filters = _team_scope_filters(employee)
+    if filters is None:
+        return []
+    filters.append(["status", "in", ["Pending", "Approved", "Rejected"]])
+    if from_date:
+        filters.append(["date", ">=", from_date])
+    if to_date:
+        filters.append(["date", "<=", to_date])
+    if project:
+        filters.append(["site_name", "=", project])
     rows = frappe.get_all(
         "Missed Checkout",
         filters=filters,
@@ -729,10 +775,32 @@ def get_team_missed_checkouts():
             "approver", "approver_comment", "submitted_on",
         ],
         order_by="modified desc",
-        limit_page_length=200,
+        limit_page_length=int(limit or 200),
+        limit_start=int(start or 0),
         ignore_permissions=True,
     )
     return [_serialize_mc(r) for r in rows]
+
+
+@frappe.whitelist()
+def decide_missed_checkouts(names, action, comment=None):
+    """Bulk approve/reject missed check-outs — reuses the single-row methods
+    (which enforce _can_approve), with a savepoint per row."""
+    names = frappe.parse_json(names) if isinstance(names, str) else (names or [])
+    done, failed = [], []
+    for i, name in enumerate(names):
+        sp = f"mco_{i}"
+        frappe.db.savepoint(sp)
+        try:
+            if action == "approve":
+                approve_missed_checkout(name)
+            else:
+                reject_missed_checkout(name, comment or "")
+            done.append(name)
+        except Exception:
+            frappe.db.rollback(save_point=sp)
+            failed.append(name)
+    return {"done": done, "failed": failed}
 
 
 @frappe.whitelist()

@@ -390,9 +390,17 @@
     },
 
     // Manager queue — my team's off-zone requests only (never my own).
-    async getTeamViolations() {
-      const r = await callMethod('akg_ess.api.get_team_violations').catch(() => []);
+    // Optional filters: { employee, from_date, to_date, project, limit, start }.
+    async getTeamViolations(opts = {}) {
+      const r = await callMethod('akg_ess.api.get_team_violations', {
+        employee: opts.employee || null, from_date: opts.from_date || null,
+        to_date: opts.to_date || null, project: opts.project || null,
+        limit: opts.limit || 200, start: opts.start || 0,
+      }).catch(() => []);
       return Array.isArray(r) ? r : [];
+    },
+    async bulkDecideViolations(names, action, comment) {
+      return callMethod('akg_ess.api.decide_violations', { names, action, comment: comment || null });
     },
 
     async createViolation({ log_type, distance_m, nearest_site, selected_project, scope_of_work, reason, actual_lat, actual_lng, accuracy, linked_checkin, _localId }) {
@@ -632,11 +640,18 @@
         return Array.isArray(r) ? r : [];
       } catch (e) { return []; }
     },
-    async getMissedCheckouts() {
+    async getMissedCheckouts(opts = {}) {
       try {
-        const r = await callMethod('akg_ess.api.get_team_missed_checkouts');
+        const r = await callMethod('akg_ess.api.get_team_missed_checkouts', {
+          employee: opts.employee || null, from_date: opts.from_date || null,
+          to_date: opts.to_date || null, project: opts.project || null,
+          limit: opts.limit || 200, start: opts.start || 0,
+        });
         return Array.isArray(r) ? r : [];
       } catch (e) { return []; }
+    },
+    async bulkDecideMissedCheckouts(names, action, comment) {
+      return callMethod('akg_ess.api.decide_missed_checkouts', { names, action, comment: comment || null });
     },
     async getMyMissedCheckouts() {
       try {

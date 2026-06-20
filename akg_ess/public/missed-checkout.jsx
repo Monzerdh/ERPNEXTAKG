@@ -384,17 +384,32 @@ function MissedCheckoutsQueue({ mode = 'team' }) {
   const [rows, setRows] = React.useState([]);
   const [tab, setTab] = React.useState('pending');
   const [busy, setBusy] = React.useState(null);
+  const [filters, setFilters] = React.useState({});
+  const [limit, setLimit] = React.useState(100);
+  const [selected, setSelected] = React.useState(() => new Set());
+  const [bulkBusy, setBulkBusy] = React.useState(false);
+  const [teamOpts, setTeamOpts] = React.useState([]);
   const canAct = mode === 'team';
 
   const refresh = React.useCallback(() => {
-    const p = mode === 'team' ? window.frappe.getMissedCheckouts() : window.frappe.getMyMissedCheckouts();
+    const p = mode === 'team' ? window.frappe.getMissedCheckouts({ ...filters, limit }) : window.frappe.getMyMissedCheckouts();
     Promise.resolve(p).then((r) => setRows(r || [])).catch(() => setRows([]));
-  }, [mode]);
+  }, [mode, filters, limit]);
   React.useEffect(() => { refresh(); }, [refresh]);
+  React.useEffect(() => {
+    if (canAct) window.frappe.getTeam().then((tm) => setTeamOpts(tm || [])).catch(() => {});
+  }, [canAct]);
 
   const pending = rows.filter((r) => r.status === 'Pending');
   const reviewed = rows.filter((r) => r.status !== 'Pending');
   const list = tab === 'pending' ? pending : reviewed;
+  const reachedLimit = mode === 'team' && rows.length >= limit;
+
+  const changeFilters = (f) => { setSelected(new Set()); setLimit(100); setFilters(f); };
+  const switchTab = (tb) => { setSelected(new Set()); setTab(tb); };
+  const toggleSel = (name) => setSelected((s) => { const n = new Set(s); n.has(name) ? n.delete(name) : n.add(name); return n; });
+  const allPendingSelected = pending.length > 0 && pending.every((x) => selected.has(x.name));
+  const toggleAll = () => setSelected(allPendingSelected ? new Set() : new Set(pending.map((x) => x.name)));
 
   const act = async (row, kind) => {
     setBusy(row.name);
@@ -414,6 +429,24 @@ function MissedCheckoutsQueue({ mode = 'team' }) {
     }
   };
 
+  const bulk = async (action) => {
+    const names = [...selected];
+    if (!names.length) return;
+    setBulkBusy(true);
+    try {
+      const r = await window.frappe.bulkDecideMissedCheckouts(names, action);
+      const done = (r && r.done) ? r.done.length : 0;
+      const failed = (r && r.failed) ? r.failed.length : 0;
+      toast(`${done} ${action === 'approve' ? t.approved : t.rejected}${failed ? ` · ${failed} ${t.failed}` : ''}`, failed ? 'warn' : 'ok');
+      setSelected(new Set());
+      refresh();
+    } catch (e) {
+      toast(e.message || 'Failed', 'bad');
+    } finally {
+      setBulkBusy(false);
+    }
+  };
+
   return (
     <>
       <div className="section-label" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -423,14 +456,23 @@ function MissedCheckoutsQueue({ mode = 'team' }) {
         )}
       </div>
 
+      {canAct && <TeamFilters team={teamOpts} projects={window.PROJECTS || []} value={filters} onChange={changeFilters} />}
+
       <div className="seg" role="tablist" style={{ marginBottom: 8 }}>
-        <button type="button" className={`seg-btn ${tab === 'pending' ? 'active' : ''}`} onClick={() => setTab('pending')}>
+        <button type="button" className={`seg-btn ${tab === 'pending' ? 'active' : ''}`} onClick={() => switchTab('pending')}>
           {t.pending_review} ({pending.length})
         </button>
-        <button type="button" className={`seg-btn ${tab === 'reviewed' ? 'active' : ''}`} onClick={() => setTab('reviewed')}>
+        <button type="button" className={`seg-btn ${tab === 'reviewed' ? 'active' : ''}`} onClick={() => switchTab('reviewed')}>
           {t.reviewed} ({reviewed.length})
         </button>
       </div>
+
+      {canAct && tab === 'pending' && pending.length > 0 && (
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--text-muted)', margin: '0 2px 8px' }}>
+          <input type="checkbox" checked={allPendingSelected} onChange={toggleAll} />
+          {t.select_all} ({pending.length})
+        </label>
+      )}
 
       {list.length === 0 ? (
         <div className="card" style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: 13, padding: '20px 16px' }}>
@@ -442,13 +484,17 @@ function MissedCheckoutsQueue({ mode = 'team' }) {
           {list.map((x) => {
             const dontRemember = /don'?t remember|لا يتذكر/i.test(x.reason || '');
             const isBusy = busy === x.name;
+            const canSelect = canAct && x.status === 'Pending';
             const statusChip =
               x.status === 'Approved' ? <span className="chip chip-ok">{t.approved}</span> :
               x.status === 'Rejected' ? <span className="chip" style={{ background: 'var(--bad-100)', color: 'var(--bad)' }}>{t.rejected}</span> :
               <span className="chip chip-warn chip-dot">{t.pending_review}</span>;
             return (
-              <div key={x.name} className="card mc-queue-card" style={{ padding: 0, overflow: 'hidden' }}>
+              <div key={x.name} className="card mc-queue-card" style={{ padding: 0, overflow: 'hidden', borderColor: selected.has(x.name) ? 'var(--navy-800)' : undefined }}>
                 <div style={{ padding: 14, display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+                  {canSelect && (
+                    <input type="checkbox" style={{ marginTop: 4 }} checked={selected.has(x.name)} onChange={() => toggleSel(x.name)} />
+                  )}
                   <Avatar initials={x.avatar_initials || (x.employee_name || '?')[0]} />
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
@@ -509,6 +555,16 @@ function MissedCheckoutsQueue({ mode = 'team' }) {
             );
           })}
         </div>
+      )}
+
+      {reachedLimit && (
+        <button className="btn btn-sm btn-ghost" style={{ width: '100%', marginTop: 10 }} onClick={() => setLimit((l) => l + 100)}>
+          {t.load_more}
+        </button>
+      )}
+
+      {canAct && tab === 'pending' && (
+        <BulkActionBar count={selected.size} busy={bulkBusy} onApprove={() => bulk('approve')} onReject={() => bulk('reject')} onClear={() => setSelected(new Set())} />
       )}
     </>
   );
