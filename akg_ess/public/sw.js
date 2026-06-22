@@ -6,7 +6,7 @@
 //   - Other cross-origin : passthrough (CDN handles its own caching)
 // Bump CACHE_VERSION whenever you ship a new build.
 
-const CACHE_VERSION = 'akg-ess-v82';
+const CACHE_VERSION = 'akg-ess-v83';
 const STATIC_CACHE = `static-${CACHE_VERSION}`;
 const RUNTIME_CACHE = `runtime-${CACHE_VERSION}`;
 const TILE_CACHE = `osm-tiles-${CACHE_VERSION}`;
@@ -14,17 +14,17 @@ const TILE_MAX_ENTRIES = 600; // ~roughly Dubai metro at zoom 14–17
 
 const APP_SHELL = [
   '/ess',
-  '/assets/akg_ess/styles.css?v=82',
-  '/assets/akg_ess/data.js?v=82',
-  '/assets/akg_ess/api.js?v=82',
-  '/assets/akg_ess/ui.jsx?v=82',
-  '/assets/akg_ess/attendance.jsx?v=82',
-  '/assets/akg_ess/monthly-report.jsx?v=82',
-  '/assets/akg_ess/leaves.jsx?v=82',
-  '/assets/akg_ess/petty.jsx?v=82',
-  '/assets/akg_ess/profile.jsx?v=82',
-  '/assets/akg_ess/notifications.jsx?v=82',
-  '/assets/akg_ess/missed-checkout.jsx?v=82',
+  '/assets/akg_ess/styles.css?v=83',
+  // Vendored libraries (self-hosted) — now same-origin, so the SW caches them
+  // too: the app loads fully offline without any third-party CDN.
+  '/assets/akg_ess/vendor/leaflet.css?v=83',
+  '/assets/akg_ess/vendor/react.production.min.js?v=83',
+  '/assets/akg_ess/vendor/react-dom.production.min.js?v=83',
+  '/assets/akg_ess/vendor/leaflet.js?v=83',
+  '/assets/akg_ess/data.js?v=83',
+  '/assets/akg_ess/api.js?v=83',
+  // Single pre-compiled application bundle (replaces the per-screen .jsx files).
+  '/assets/akg_ess/ess.bundle.js?v=83',
   '/assets/akg_ess/manifest.webmanifest',
   '/assets/akg_ess/assets/akg-logo.png',
   '/assets/akg_ess/assets/icon-192.png',

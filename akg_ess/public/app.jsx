@@ -1,0 +1,354 @@
+// AKG ESS — application entry.
+// This file was previously an inline <script type="text/babel"> block in
+// www/ess/index.html. It is now the LAST module concatenated into
+// ess.bundle.js (see build.mjs) so it runs after every component is defined.
+// It depends on the global window.React / window.ReactDOM (vendored), and on
+// the components/helpers declared by the earlier files in the bundle.
+
+// Production runtime defaults (tweaks panel removed). Persisted client-side
+// preferences override these via localStorage on first mount.
+const RUNTIME_DEFAULTS = {
+  language: 'en',
+  variant: 'industrial',
+};
+
+// ─── Generic offline-queue sync ──────────────────────────────────────
+// Each queued item has _kind: 'checkin' | 'leave' | 'claim' | 'topup'.
+// Items that succeed are removed from the queue.  Items that fail with a
+// network error stay in the queue (we'll retry next time we reconnect).
+// Items that fail with a server error (validation / permission / etc.)
+// are dropped — keeping them would mean retrying forever against a doc
+// the server will always reject.
+async function syncOfflineQueue(queue, setQueue, setIsOffline) {
+  if (!queue.length) return 0;
+  if (setIsOffline) setIsOffline(false);
+  const remaining = [];
+  let synced = 0;
+  for (const item of queue) {
+    try {
+      if (item._kind === 'leave') {
+        await window.frappe.submitLeave(item);
+        synced++;
+        await window.frappe.pushNotification({
+          kind: 'sync', title_key: 'item_synced',
+          body: `Leave application synced: ${item.leave_type} ${item.from_date} → ${item.to_date}`,
+          target: { tab: 'leaves' },
+        }).catch(() => {});
+      } else if (item._kind === 'claim') {
+        await window.frappe.submitClaim(item);
+        synced++;
+        const total = (item.expenses || []).reduce((s, e) => s + (parseFloat(e.amount) || 0), 0);
+        await window.frappe.pushNotification({
+          kind: 'sync', title_key: 'item_synced',
+          body: `Expense claim synced · AED ${total.toFixed(2)}`,
+          target: { tab: 'petty' },
+        }).catch(() => {});
+      } else if (item._kind === 'topup') {
+        await window.frappe.requestTopup(item.amount, item.reason);
+        synced++;
+        await window.frappe.pushNotification({
+          kind: 'sync', title_key: 'item_synced',
+          body: `Top-up request synced · AED ${parseFloat(item.amount).toFixed(2)}`,
+          target: { tab: 'petty' },
+        }).catch(() => {});
+      } else /* checkin */ {
+        await window.frappe.createCheckin(item);
+        synced++;
+      }
+    } catch (e) {
+      if (window.frappe.isNetworkError && window.frappe.isNetworkError(e)) {
+        // Still no signal — keep the item in the queue for next attempt.
+        remaining.push(item);
+      } else {
+        // Server-side rejection (duplicate, validation, permission, …).
+        // Don't loop forever — drop the item and log it.  In practice the
+        // user's server-side guard for office workers will reject a 2nd
+        // IN/OUT on the same day, which lands here.
+        try { console.warn('AKG ESS: queued item rejected by server, dropping', item, e); } catch (x) {}
+      }
+    }
+  }
+  setQueue(remaining);
+  window.dispatchEvent(new Event('akg:notifs-changed'));
+  return synced;
+}
+
+function App() {
+  const [language, setLanguageState] = React.useState(() => {
+    try { return localStorage.getItem('akg.lang') || RUNTIME_DEFAULTS.language; } catch (e) { return RUNTIME_DEFAULTS.language; }
+  });
+  const [role, setRole] = React.useState('employee');
+  const [variant] = React.useState(RUNTIME_DEFAULTS.variant);
+
+  const [tab, setTab] = React.useState('attendance');
+  const [subView, setSubView] = React.useState(null);
+  // Outbox is restored from localStorage so queued items survive an app
+  // close / reload / PWA reinstall.  Initial offline state mirrors what
+  // the browser already knows from navigator.onLine.
+  const [offlineQueue, setOfflineQueue] = React.useState(() => {
+    try { return JSON.parse(localStorage.getItem('akg.outbox') || '[]'); }
+    catch (e) { return []; }
+  });
+  const [isOffline, setIsOffline] = React.useState(() => !navigator.onLine);
+  const [loggedIn, setLoggedIn] = React.useState(false);
+  const [checking, setChecking] = React.useState(true); // session probe in flight
+  const [notifsOpen, setNotifsOpen] = React.useState(false);
+
+  // Persist the outbox to localStorage on every change so queued items
+  // can't be lost.
+  React.useEffect(() => {
+    try { localStorage.setItem('akg.outbox', JSON.stringify(offlineQueue)); }
+    catch (e) {}
+  }, [offlineQueue]);
+
+  // Auto-detect network state: when the browser fires 'online' we flip
+  // the flag and drain any queued items.  When it fires 'offline' we
+  // flip the flag so subsequent submits route to the queue.
+  React.useEffect(() => {
+    const goOnline = () => {
+      setIsOffline(false);
+      // Drain immediately on reconnect.  Use a function form of
+      // setOfflineQueue to read the latest queue, since this listener
+      // captures the closure.
+      setOfflineQueue((q) => {
+        if (q.length) {
+          syncOfflineQueue(q, setOfflineQueue, setIsOffline).catch(() => {});
+        }
+        return q;
+      });
+    };
+    const goOffline = () => setIsOffline(true);
+    window.addEventListener('online', goOnline);
+    window.addEventListener('offline', goOffline);
+    return () => {
+      window.removeEventListener('online', goOnline);
+      window.removeEventListener('offline', goOffline);
+    };
+  }, []);
+
+  // Hydrate session on first mount — confirm the current user.
+  // Only a definitive 401/403 means "not signed in" → show login. A
+  // transient failure (network blip, timeout, cold-start 5xx) is retried a
+  // few times so a valid session is never bounced to the login screen.
+  React.useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      for (let attempt = 0; attempt < 4 && !cancelled; attempt++) {
+        try {
+          const u = await window.frappe.getCurrentUser();
+          if (!cancelled && u && u.employee) {
+            setLoggedIn(true);
+            if (u.is_manager) setRole('manager');
+            window.frappe.hydrateLegacyGlobals().catch(() => {});
+          }
+          if (!cancelled) setChecking(false);
+          return;
+        } catch (e) {
+          const status = e && e.status;
+          const definitelyOut = status === 401 || status === 403;
+          if (definitelyOut || attempt === 3) {
+            if (!cancelled) setChecking(false); // genuinely signed out, or gave up → login
+            return;
+          }
+          // transient — wait (0.7s, 1.4s, 2.1s) then retry, keeping the splash up
+          await new Promise((r) => setTimeout(r, 700 * (attempt + 1)));
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  React.useEffect(() => {
+    try { localStorage.setItem('akg.lang', language); } catch (e) {}
+  }, [language]);
+
+  React.useEffect(() => {
+    document.documentElement.setAttribute('data-variant', variant);
+    document.documentElement.setAttribute('dir', language === 'ar' ? 'rtl' : 'ltr');
+    document.documentElement.setAttribute('lang', language);
+  }, [variant, language]);
+
+  const setLanguage = React.useCallback((lang) => setLanguageState(lang), []);
+  const i18n = React.useMemo(() => ({ lang: language, t: window.STRINGS[language] }), [language]);
+
+  // If the user lands on the petty tab but has_petty_cash is off (e.g. HR
+  // toggled it off mid-session), bounce them back to attendance.
+  const hasPettyAccess = !!(window.CURRENT_USER && window.CURRENT_USER.has_petty_cash);
+  React.useEffect(() => {
+    if (tab === 'petty' && !hasPettyAccess) setTab('attendance');
+  }, [tab, hasPettyAccess]);
+
+  // Pending counts for nav badges
+  const [pending, setPending] = React.useState({ leaves: 0, claims: 0 });
+  React.useEffect(() => {
+    if (role !== 'manager') { setPending({ leaves: 0, claims: 0 }); return; }
+    // Don't waste a query on team claims if the manager doesn't see the petty tab.
+    const claimsCall = hasPettyAccess ? window.frappe.getTeamClaims() : Promise.resolve([]);
+    Promise.all([window.frappe.getTeamLeaves(), claimsCall])
+      .then(([l, c]) => setPending({ leaves: l.length, claims: c.length }))
+      .catch(() => setPending({ leaves: 0, claims: 0 }));
+  }, [role, tab, hasPettyAccess]);
+
+  // Geofence mode is now driven by real GPS; the prototype "inside/outside"
+  // toggle is gone. Components fall back to live geolocation.
+  const geofenceMode = 'live';
+
+  // While confirming the session, show a neutral splash (not the login
+  // screen) so a valid session never flashes "logged out" on reload.
+  if (checking) {
+    return (
+      <I18nCtx.Provider value={i18n}>
+        <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg, #0b1b3a)' }}>
+          <span className="spinner" style={{ width: 28, height: 28 }} />
+        </div>
+      </I18nCtx.Provider>
+    );
+  }
+
+  if (!loggedIn) {
+    return (
+      <I18nCtx.Provider value={i18n}>
+        <ToastProvider>
+          <LoginScreen onSignIn={async (full_name) => {
+            setLoggedIn(true);
+            try {
+              const u = await window.frappe.getCurrentUser();
+              if (u && u.is_manager) setRole('manager');
+              window.frappe.hydrateLegacyGlobals().catch(() => {});
+            } catch (e) {}
+          }} lang={language} setLanguage={setLanguage} />
+        </ToastProvider>
+      </I18nCtx.Provider>
+    );
+  }
+
+  return (
+    <I18nCtx.Provider value={i18n}>
+      <ToastProvider>
+        <div className="app-shell">
+          <AppHeader role={role} isOffline={isOffline} setIsOffline={setIsOffline} offlineCount={offlineQueue.length} setTab={setTab} lang={language} setLanguage={setLanguage} onOpenNotifs={() => setNotifsOpen(true)} />
+
+          <div className="app-content">
+            {tab === 'attendance' && subView === 'monthly-report' && <MonthlyReport role={role} onBack={() => setSubView(null)} />}
+            {tab === 'attendance' && !subView && <AttendanceScreen geofenceMode={geofenceMode} offlineQueue={offlineQueue} setOfflineQueue={setOfflineQueue} isOffline={isOffline} setIsOffline={setIsOffline} onOpenMonthlyReport={() => setSubView('monthly-report')} />}
+            {tab === 'leaves' && <LeavesScreen role={role} isOffline={isOffline} offlineQueue={offlineQueue} setOfflineQueue={setOfflineQueue} />}
+            {tab === 'petty' && <PettyScreen role={role} geofenceMode={geofenceMode} isOffline={isOffline} offlineQueue={offlineQueue} setOfflineQueue={setOfflineQueue} />}
+            {tab === 'profile' && subView === 'outbox' && (
+              <div>
+                <button className="btn btn-sm btn-ghost" onClick={() => setSubView(null)} style={{ marginBottom: 12 }}>
+                  <Icon name="chevronL" size={14} /> Back
+                </button>
+                <OutboxView outbox={offlineQueue} isOffline={isOffline} onSyncAll={() => syncOfflineQueue(offlineQueue, setOfflineQueue, setIsOffline)} />
+              </div>
+            )}
+            {tab === 'profile' && !subView && <ProfileScreen role={role} setRole={setRole} onLogout={async () => { try { await window.frappe.logout(); } catch (e) {} setLoggedIn(false); }} outboxCount={offlineQueue.length} onOpenOutbox={() => setSubView('outbox')} />}
+          </div>
+
+          <BottomNav tab={tab} setTab={(n) => { setTab(n); setSubView(null); }} pending={pending} />
+        </div>
+        {notifsOpen && (
+          <NotificationsSheet
+            role={role}
+            onClose={() => setNotifsOpen(false)}
+            onNavigate={(targetTab) => { setTab(targetTab); setSubView(null); }}
+          />
+        )}
+        {/* Missed-checkout self-rectify flow. Detects pending holds on
+            mount and opens the modal one item at a time. Cheap when
+            there's nothing to rectify (one REST call returns []). */}
+        {window.MissedCheckoutFlow && <MissedCheckoutFlow />}
+      </ToastProvider>
+    </I18nCtx.Provider>
+  );
+}
+
+function AppHeader({ role, isOffline, setIsOffline, offlineCount, setTab, lang, setLanguage, onOpenNotifs }) {
+  const u = window.CURRENT_USER || { avatar_initials: '·' };
+  const t = useT();
+  const toggleLang = () => setLanguage(lang === 'ar' ? 'en' : 'ar');
+  return (
+    <div className="app-header">
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+        <img src="/assets/akg_ess/assets/akg-logo.png" alt="" style={{ width: 36, height: 36, objectFit: 'contain' }} />
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontSize: 15, fontWeight: 700, letterSpacing: '-0.01em' }}>AKG ESS</div>
+          <div style={{ fontSize: 10.5, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+            {role === 'manager' ? t.role_label_manager : t.role_label_employee} · {t.live}
+          </div>
+        </div>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <NotificationsBell role={role} onOpen={onOpenNotifs} />
+        <button
+          className="icon-btn"
+          onClick={toggleLang}
+          title={lang === 'ar' ? 'English' : 'العربية'}
+          style={{ color: 'var(--text-muted)' }}
+        >
+          <Icon name="globe" size={20} />
+        </button>
+        <button className="icon-btn refresh-btn" onClick={(e) => {
+          // Cover the reload with a fade-in overlay so the user sees a
+          // loading state instead of a flash of blank page while the
+          // browser tears down the SPA.
+          const btn = e.currentTarget;
+          btn.classList.add('is-spinning');
+          const overlay = document.createElement('div');
+          overlay.className = 'reload-overlay';
+          overlay.innerHTML = `
+            <div class="reload-overlay-spinner">
+              <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 12a9 9 0 1 1-3-6.7"/>
+                <polyline points="21 3 21 9 15 9"/>
+              </svg>
+            </div>
+            <div class="reload-overlay-label">${t.refresh || 'Refreshing'}…</div>
+          `;
+          document.body.appendChild(overlay);
+          requestAnimationFrame(() => overlay.classList.add('is-visible'));
+          setTimeout(() => { window.location.reload(); }, 600);
+        }} title={t.refresh} style={{ color: 'var(--text-muted)' }}>
+          <Icon name="refresh" size={20} />
+        </button>
+        <button className="icon-btn" onClick={() => setIsOffline(!isOffline)} title={isOffline ? 'Go online' : 'Go offline (demo)'} style={{ color: isOffline ? 'var(--warn)' : 'var(--text-muted)', position: 'relative' }}>
+          <Icon name={isOffline ? 'wifiOff' : 'wifi'} size={20} />
+          {offlineCount > 0 && <span style={{ position: 'absolute', top: 2, right: 2, background: 'var(--warn)', color: 'white', fontSize: 9, fontWeight: 700, minWidth: 14, height: 14, borderRadius: 7, display: 'grid', placeItems: 'center', padding: '0 3px' }}>{offlineCount}</span>}
+        </button>
+        <button
+          className="app-header-avatar"
+          onClick={() => setTab && setTab('profile')}
+          title={t.tab_profile}
+          style={{ border: 0, cursor: 'pointer', font: 'inherit' }}
+        >{u.avatar_initials}</button>
+      </div>
+    </div>
+  );
+}
+
+function BottomNav({ tab, setTab, pending }) {
+  const t = useT();
+  // Petty Cash tab is hidden for employees who don't handle company cash —
+  // controlled by Employee.has_petty_cash on the live site.  Managers who
+  // need to approve their team's petty cash should also be flagged
+  // has_petty_cash=1 (it's the single visibility signal).
+  const showPetty = !!(window.CURRENT_USER && window.CURRENT_USER.has_petty_cash);
+  const items = [
+    { id: 'attendance', label: t.tab_attendance, icon: 'clock' },
+    { id: 'leaves',     label: t.tab_leaves,     icon: 'calendar', badge: pending.leaves },
+    showPetty && { id: 'petty', label: t.tab_petty, icon: 'wallet', badge: pending.claims },
+    { id: 'profile',    label: t.tab_profile,    icon: 'user' },
+  ].filter(Boolean);
+  return (
+    <nav className="bottom-nav" style={{ '--nav-cols': items.length }}>
+      {items.map((it) => (
+        <button key={it.id} className={`bottom-nav-item ${tab === it.id ? 'active' : ''}`} onClick={() => setTab(it.id)}>
+          <Icon name={it.icon} size={22} />
+          <span>{it.label}</span>
+          {it.badge > 0 && <span className="bottom-nav-badge">{it.badge}</span>}
+        </button>
+      ))}
+    </nav>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);

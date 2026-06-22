@@ -19,3 +19,4 @@ recursive-include akg_ess *.txt
 recursive-include akg_ess *.webmanifest
 recursive-include akg_ess *.woff
 recursive-include akg_ess *.woff2
+prune akg_ess/node_modules

@@ -1,0 +1,12 @@
+{
+  "name": "akg-ess-frontend",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Build tooling for the AKG ESS PWA — esbuild bundle of the /ess React app.",
+  "scripts": {
+    "build": "node build.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "0.21.5"
+  }
+}
