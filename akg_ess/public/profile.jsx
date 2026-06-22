@@ -275,6 +275,13 @@ function GeofenceViolations({ mode = 'team' }) {
                       "{x.reason}"
                     </div>
 
+                    {/* Selfie captured at the punch (anti-buddy-punching) */}
+                    {x.selfie && (
+                      <a href={x.selfie} target="_blank" rel="noopener" style={{ display: 'inline-block', marginTop: 10 }}>
+                        <img src={x.selfie} alt={t.selfie} style={{ width: 64, height: 64, borderRadius: 12, objectFit: 'cover', border: '2px solid var(--navy-200)' }} />
+                      </a>
+                    )}
+
                     {/* Real OSM map: employee position vs site centre + geofence circle */}
                     {(x.actual_lat ?? x.latitude) != null && site && (
                       <div style={{ marginTop: 10 }}>

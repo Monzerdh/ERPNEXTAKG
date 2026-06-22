@@ -118,6 +118,7 @@ def on_status_change(doc, method=None):
                 "accuracy_m": doc.accuracy_m,
                 "project": doc.selected_project or doc.nearest_site,
                 "scope_of_work": doc.get("scope_of_work") or None,
+                "selfie": doc.get("selfie") or None,
                 "device_id": "ESS-MOBILE",
                 "skip_auto_attendance": 1,
                 "local_id": f"GFV:{doc.name}",

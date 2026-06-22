@@ -106,6 +106,30 @@ def get_csrf_token():
 
 
 @frappe.whitelist()
+def add_punch_selfie(reference_doctype, reference_name, image):
+    """Attach a selfie (data URL) to the current employee's own punch — an
+    Employee Checkin or a Geofence Violation. Stored as a PRIVATE file on the
+    record so only users who can read that record (the employee + their
+    manager) can view it. Ownership-checked; never trusts the caller."""
+    import re
+    if reference_doctype not in ("Employee Checkin", "Geofence Violation"):
+        frappe.throw("Invalid reference type.")
+    emp = _my_employee()
+    row_emp = frappe.db.get_value(reference_doctype, reference_name, "employee")
+    if not emp or row_emp != emp:
+        frappe.throw("You can only attach a selfie to your own punch.")
+    m = re.match(r"^data:image/(\w+);base64,(.+)$", image or "", re.S)
+    if not m:
+        frappe.throw("Invalid image data.")
+    ext = (m.group(1) or "jpeg").lower()
+    ext = "jpg" if ext == "jpeg" else ext
+    from frappe.utils.file_manager import save_file
+    f = save_file(f"selfie-{reference_name}.{ext}", m.group(2), reference_doctype, reference_name, decode=True, is_private=1)
+    frappe.db.set_value(reference_doctype, reference_name, "selfie", f.file_url, update_modified=False)
+    return f.file_url
+
+
+@frappe.whitelist()
 def get_session_profile():
     """One-shot bootstrap: returns everything the PWA needs to populate the
     home screen — current user, linked Employee, manager flag.
@@ -131,7 +155,7 @@ def get_session_profile():
             "company", "cell_number", "date_of_joining", "reports_to",
             "leave_approver", "expense_approver",
             "is_office_worker", "has_petty_cash", "default_scope_of_work",
-            "has_overtime",
+            "has_overtime", "require_selfie",
         ],
         as_dict=True,
     ) or {}
@@ -190,6 +214,7 @@ def get_session_profile():
         "is_office_worker": bool(emp.get("is_office_worker")),
         "has_petty_cash": bool(emp.get("has_petty_cash")),
         "has_overtime": bool(emp.get("has_overtime")),
+        "require_selfie": bool(emp.get("require_selfie")),
         "default_scope_of_work": emp.get("default_scope_of_work") or "",
         "leave_approver": leave_approver or None,
         "leave_approver_name": leave_approver_name or "",
@@ -689,7 +714,7 @@ def get_team_violations(employee=None, from_date=None, to_date=None, project=Non
         fields=[
             "name", "employee", "employee_name", "log_type", "time", "date",
             "latitude", "longitude", "accuracy_m",
-            "distance_m", "nearest_site", "selected_project", "scope_of_work",
+            "distance_m", "nearest_site", "selected_project", "scope_of_work", "selfie",
             "reason", "status", "manager_notes", "approver", "approved_on", "linked_checkin",
         ],
         order_by="modified desc",

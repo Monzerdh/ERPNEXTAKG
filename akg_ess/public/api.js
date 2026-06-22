@@ -382,11 +382,17 @@
       return listResource('Geofence Violation', {
         filters: [['employee', '=', u.employee]],
         fields: ['name', 'employee', 'employee_name', 'log_type', 'time', 'date', 'distance_m', 'nearest_site',
-                 'selected_project', 'scope_of_work', 'reason', 'status', 'manager_notes', 'approver',
+                 'selected_project', 'scope_of_work', 'selfie', 'reason', 'status', 'manager_notes', 'approver',
                  'approved_on', 'linked_checkin'],
         orderBy: 'time desc',
         limit: 50,
       }).catch(() => []);
+    },
+
+    // Attach a selfie (data URL) to the current employee's own punch.
+    async addPunchSelfie(reference_doctype, reference_name, image) {
+      if (!image) return null;
+      return callMethod('akg_ess.api.add_punch_selfie', { reference_doctype, reference_name, image }).catch(() => null);
     },
 
     // Manager queue — my team's off-zone requests only (never my own).

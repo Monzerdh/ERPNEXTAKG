@@ -23,6 +23,8 @@ function SiteAttendanceScreen({ geofenceMode, offlineQueue, setOfflineQueue, isO
   const [checkoutModal, setCheckoutModal] = React.useState(null); // { project, openSession }
   const [outsideZoneModal, setOutsideZoneModal] = React.useState(null); // { type: 'IN'|'OUT', payload, distance, nearest, onConfirm }
   const [holdStatus, setHoldStatus] = React.useState('clear'); // 'clear'|'pending'|'approved'|'rejected'
+  const [selfieModal, setSelfieModal] = React.useState(null); // { kind, onCapture } for the in-zone check-in selfie gate
+  const requireSelfie = !!(window.CURRENT_USER && window.CURRENT_USER.require_selfie);
 
   const reloadViolations = React.useCallback(() => {
     return window.frappe.getMyViolations().then((v) => { setMyViolations(v || []); return v; }).catch(() => []);
@@ -107,6 +109,16 @@ function SiteAttendanceScreen({ geofenceMode, offlineQueue, setOfflineQueue, isO
       });
       return;
     }
+    // Selfie-required employees capture one first, then we check in.
+    if (requireSelfie) {
+      setSelfieModal({ kind: 'checkin', onCapture: (selfie) => doInZoneCheckIn(selfie) });
+      return;
+    }
+    doInZoneCheckIn(null);
+  };
+
+  const doInZoneCheckIn = async (selfie) => {
+    setSelfieModal(null);
     setActing(true);
     const payload = {
       log_type: 'IN',
@@ -121,6 +133,7 @@ function SiteAttendanceScreen({ geofenceMode, offlineQueue, setOfflineQueue, isO
     }
     try {
       const row = await window.frappe.createCheckin(payload);
+      if (selfie && row && row.name) await window.frappe.addPunchSelfie('Employee Checkin', row.name, selfie);
       setCheckins((c) => [row, ...c]);
       toast(`${t.check_in} ✓ ${match.site.project_name}`, 'ok');
     } catch (e) {
@@ -150,7 +163,7 @@ function SiteAttendanceScreen({ geofenceMode, offlineQueue, setOfflineQueue, isO
     });
   };
 
-  const onConfirmCheckOut = async ({ scope_of_work, selected_project, reason }) => {
+  const onConfirmCheckOut = async ({ scope_of_work, selected_project, reason, selfie }) => {
     // Off-zone check-out: record NOTHING — file a Geofence Violation only,
     // captured right here in the checkout sheet (scope + project + reason).
     // Official attendance (ESS Daily + HR) is held until the manager approves.
@@ -166,7 +179,8 @@ function SiteAttendanceScreen({ geofenceMode, offlineQueue, setOfflineQueue, isO
         actual_lat: myPos.lat, actual_lng: myPos.lng, accuracy: myPos.accuracy,
       };
       try {
-        await window.frappe.createViolation(vpayload);
+        const vrow = await window.frappe.createViolation(vpayload);
+        if (selfie && vrow && vrow.name) await window.frappe.addPunchSelfie('Geofence Violation', vrow.name, selfie);
         await reloadViolations();
         const today = new Date().toISOString().slice(0, 10);
         const hs = await window.frappe.getDayHoldStatus(window.CURRENT_USER.employee, today);
@@ -203,6 +217,7 @@ function SiteAttendanceScreen({ geofenceMode, offlineQueue, setOfflineQueue, isO
     }
     try {
       const row = await window.frappe.createCheckin(payload);
+      if (selfie && row && row.name) await window.frappe.addPunchSelfie('Employee Checkin', row.name, selfie);
       setCheckins((c) => [row, ...c]);
       setCheckoutModal(null);
       toast(`${t.check_out} ✓`, 'ok');
@@ -225,7 +240,7 @@ function SiteAttendanceScreen({ geofenceMode, offlineQueue, setOfflineQueue, isO
   // posted until the manager approves. The employee is never locked out: the
   // pending violation makes the app treat them as checked-in/out so the next
   // action stays available.
-  const onSubmitViolation = async ({ selected_project, reason }) => {
+  const onSubmitViolation = async ({ selected_project, reason, selfie }) => {
     setActing(true);
     const ctx = outsideZoneModal;
     const vpayload = {
@@ -238,7 +253,8 @@ function SiteAttendanceScreen({ geofenceMode, offlineQueue, setOfflineQueue, isO
       actual_lat: myPos.lat, actual_lng: myPos.lng, accuracy: myPos.accuracy,
     };
     try {
-      await window.frappe.createViolation(vpayload);
+      const vrow = await window.frappe.createViolation(vpayload);
+      if (selfie && vrow && vrow.name) await window.frappe.addPunchSelfie('Geofence Violation', vrow.name, selfie);
       await reloadViolations();
       const today = new Date().toISOString().slice(0, 10);
       const hs = await window.frappe.getDayHoldStatus(window.CURRENT_USER.employee, today);
@@ -436,6 +452,7 @@ function SiteAttendanceScreen({ geofenceMode, offlineQueue, setOfflineQueue, isO
           distance={checkoutModal.distance}
           nearest={checkoutModal.nearest}
           defaultProject={checkoutModal.defaultProject}
+          requireSelfie={requireSelfie}
           onCancel={() => setCheckoutModal(null)}
           onConfirm={onConfirmCheckOut}
           loading={acting}
@@ -447,9 +464,21 @@ function SiteAttendanceScreen({ geofenceMode, offlineQueue, setOfflineQueue, isO
         <OutsideZonePopup
           ctx={outsideZoneModal}
           sites={sites}
+          requireSelfie={requireSelfie}
           onCancel={() => setOutsideZoneModal(null)}
           onSubmit={onSubmitViolation}
           loading={acting}
+        />
+      )}
+
+      {/* Selfie gate for in-zone check-in (selfie-required employees) */}
+      {selfieModal && (
+        <SelfieModal
+          title={t.cta_check_in}
+          confirmLabel={t.cta_check_in}
+          loading={acting}
+          onCancel={() => setSelfieModal(null)}
+          onConfirm={(shot) => selfieModal.onCapture(shot)}
         />
       )}
     </>
@@ -471,6 +500,8 @@ function OfficeAttendanceScreen({ offlineQueue, setOfflineQueue, isOffline, setI
   const [loading, setLoading] = React.useState(true);
   const [acting, setActing] = React.useState(false);
   const [confirmOut, setConfirmOut] = React.useState(false);
+  const [selfieModal, setSelfieModal] = React.useState(null);
+  const requireSelfie = !!(window.CURRENT_USER && window.CURRENT_USER.require_selfie);
 
   React.useEffect(() => {
     window.frappe.getMyCheckins().then((c) => { setCheckins(c); setLoading(false); });
@@ -506,8 +537,9 @@ function OfficeAttendanceScreen({ offlineQueue, setOfflineQueue, isOffline, setI
     ));
   }
 
-  const submit = async (logType) => {
+  const submit = async (logType, selfie) => {
     setActing(true);
+    setSelfieModal(null);
     const payload = {
       log_type: logType,
       latitude: null, longitude: null, project: null, accuracy: null,
@@ -521,6 +553,7 @@ function OfficeAttendanceScreen({ offlineQueue, setOfflineQueue, isOffline, setI
     }
     try {
       const row = await window.frappe.createCheckin(payload);
+      if (selfie && row && row.name) await window.frappe.addPunchSelfie('Employee Checkin', row.name, selfie);
       setCheckins((c) => [row, ...c]);
       toast(`${logType === 'OUT' ? t.check_out : t.check_in} ✓`, 'ok');
     } catch (e) {
@@ -540,7 +573,10 @@ function OfficeAttendanceScreen({ offlineQueue, setOfflineQueue, isOffline, setI
 
   const onPrimary = () => {
     if (dayState === 'on_clock') setConfirmOut(true);
-    else if (dayState === 'not_started') submit('IN');
+    else if (dayState === 'not_started') {
+      if (requireSelfie) setSelfieModal({ onCapture: (shot) => submit('IN', shot) });
+      else submit('IN');
+    }
   };
 
   if (loading) return (
@@ -719,8 +755,20 @@ function OfficeAttendanceScreen({ offlineQueue, setOfflineQueue, isOffline, setI
           checkInTime={todayIn ? fmtTime(todayIn.time) : ''}
           totalMin={totalMin}
           loading={acting}
+          requireSelfie={requireSelfie}
           onCancel={() => !acting && setConfirmOut(false)}
-          onConfirm={() => submit('OUT')}
+          onConfirm={(selfie) => submit('OUT', selfie)}
+        />
+      )}
+
+      {/* Selfie gate for check-in (selfie-required office workers) */}
+      {selfieModal && (
+        <SelfieModal
+          title={t.cta_check_in}
+          confirmLabel={t.cta_check_in}
+          loading={acting}
+          onCancel={() => setSelfieModal(null)}
+          onConfirm={(shot) => selfieModal.onCapture(shot)}
         />
       )}
     </>
@@ -728,8 +776,9 @@ function OfficeAttendanceScreen({ offlineQueue, setOfflineQueue, isOffline, setI
 }
 
 // ─── Confirm check-out — single-shot warning for office workers ─────────
-function CheckOutConfirmModal({ checkInTime, totalMin, loading, onCancel, onConfirm }) {
+function CheckOutConfirmModal({ checkInTime, totalMin, loading, requireSelfie = false, onCancel, onConfirm }) {
   const t = useT();
+  const [selfie, setSelfie] = React.useState('');
   React.useEffect(() => {
     const onKey = (e) => { if (e.key === 'Escape' && !loading) onCancel(); };
     window.addEventListener('keydown', onKey);
@@ -782,12 +831,19 @@ function CheckOutConfirmModal({ checkInTime, totalMin, loading, onCancel, onConf
             </div>
           </div>
 
+          {requireSelfie && (
+            <div style={{ marginTop: 14 }}>
+              <label className="field-label">{t.selfie} *</label>
+              <SelfieCapture value={selfie} onChange={setSelfie} />
+            </div>
+          )}
+
           {/* Actions */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.4fr', gap: 10, marginTop: 18 }}>
             <button className="btn btn-ghost" onClick={onCancel} disabled={loading}>
               {t.cancel || 'Cancel'}
             </button>
-            <button className="btn btn-danger" onClick={onConfirm} disabled={loading}>
+            <button className="btn btn-danger" onClick={() => onConfirm(selfie || null)} disabled={loading || (requireSelfie && !selfie)}>
               {loading ? <span className="spinner" /> : <Icon name="logout" size={16} />}
               Yes, check out
             </button>
@@ -1173,8 +1229,73 @@ function TimesheetPreview({ sessions, sites, holdStatus }) {
   );
 }
 
+// ─── Selfie capture (anti-buddy-punching) ─────────────────────────────
+// Opens the device's front camera via a file input (works on mobile PWAs);
+// returns a data URL. Shown only for employees with Require Selfie on Punch.
+function SelfieCapture({ value, onChange }) {
+  const t = useT();
+  const ref = React.useRef(null);
+  const onPick = (e) => {
+    const f = e.target.files && e.target.files[0];
+    if (!f) return;
+    const fr = new FileReader();
+    fr.onload = () => onChange(fr.result);
+    fr.readAsDataURL(f);
+    e.target.value = '';
+  };
+  return (
+    <div>
+      <input ref={ref} type="file" accept="image/*" capture="user" style={{ display: 'none' }} onChange={onPick} />
+      {value ? (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <img src={value} alt="selfie" style={{ width: 56, height: 56, borderRadius: 12, objectFit: 'cover', border: '2px solid var(--ok)' }} />
+          <button type="button" className="btn btn-sm btn-ghost" onClick={() => ref.current && ref.current.click()}>
+            <Icon name="camera" size={14} /> {t.retake_selfie}
+          </button>
+        </div>
+      ) : (
+        <button type="button" className="btn btn-sm btn-primary" onClick={() => ref.current && ref.current.click()} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+          <Icon name="camera" size={14} /> {t.take_selfie}
+        </button>
+      )}
+    </div>
+  );
+}
+
+// Standalone selfie gate used by the in-zone check-in (which has no modal).
+function SelfieModal({ title, sub, confirmLabel, onCancel, onConfirm, loading }) {
+  const t = useT();
+  const [shot, setShot] = React.useState('');
+  return ReactDOM.createPortal(
+    <div className="modal-backdrop" onClick={loading ? undefined : onCancel}>
+      <div className="modal-sheet" onClick={(e) => e.stopPropagation()}>
+        <div style={{ padding: '20px 20px 18px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
+            <div style={{ width: 32, height: 32, borderRadius: 10, background: 'var(--navy-100)', color: 'var(--navy-800)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Icon name="camera" size={18} />
+            </div>
+            <div style={{ fontSize: 17, fontWeight: 700, letterSpacing: '-0.01em' }}>{title}</div>
+          </div>
+          <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{sub || t.selfie_required}</div>
+          <div style={{ marginTop: 16 }}>
+            <SelfieCapture value={shot} onChange={setShot} />
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.3fr', gap: 10, marginTop: 22 }}>
+            <button className="btn btn-ghost" onClick={onCancel} disabled={loading}>{t.cancel}</button>
+            <button className="btn btn-primary" onClick={() => onConfirm(shot)} disabled={!shot || loading}>
+              {loading ? <span className="spinner" /> : <Icon name="check" size={16} />}
+              {confirmLabel || t.cta_check_in}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
 // ─── Check-out popup with Activity Type + Scope of Work ────────────────
-function CheckoutModal({ project, sites, inside = true, distance = 0, nearest = null, defaultProject = '', onCancel, onConfirm, loading }) {
+function CheckoutModal({ project, sites, inside = true, distance = 0, nearest = null, defaultProject = '', requireSelfie = false, onCancel, onConfirm, loading }) {
   const t = useT();
   const site = sites.find((s) => s.name === project);
   const [scopes, setScopes] = React.useState([]);
@@ -1183,6 +1304,7 @@ function CheckoutModal({ project, sites, inside = true, distance = 0, nearest = 
   const projectOptions = (window.PROJECTS && window.PROJECTS.length) ? window.PROJECTS : sites;
   const [offProject, setOffProject] = React.useState(defaultProject || nearest?.name || project || '');
   const [reason, setReason] = React.useState('');
+  const [selfie, setSelfie] = React.useState('');
 
   // Scopes of Work are a global master (not per-project) — load once.
   // Pre-select the employee's default scope when set and still active;
@@ -1204,10 +1326,11 @@ function CheckoutModal({ project, sites, inside = true, distance = 0, nearest = 
   }, [onCancel, loading]);
 
   const distLabel = distance >= 1000 ? `${(distance / 1000).toFixed(1)} km` : `${distance} m`;
-  const canSubmit = inside ? !loading : (offProject && reason.trim().length >= 8 && !loading);
+  const selfieOk = !requireSelfie || !!selfie;
+  const canSubmit = (inside ? true : (offProject && reason.trim().length >= 8)) && selfieOk && !loading;
   const submit = () => onConfirm(inside
-    ? { scope_of_work: scope }
-    : { scope_of_work: scope, selected_project: offProject, reason: reason.trim() });
+    ? { scope_of_work: scope, selfie: selfie || null }
+    : { scope_of_work: scope, selected_project: offProject, reason: reason.trim(), selfie: selfie || null });
 
   return ReactDOM.createPortal(
     <div className="modal-backdrop" onClick={loading ? undefined : onCancel}>
@@ -1300,6 +1423,13 @@ function CheckoutModal({ project, sites, inside = true, distance = 0, nearest = 
                 </div>
               </div>
             </>
+          )}
+
+          {requireSelfie && (
+            <div style={{ marginTop: 14 }}>
+              <label className="field-label">{t.selfie} *</label>
+              <SelfieCapture value={selfie} onChange={setSelfie} />
+            </div>
           )}
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.3fr', gap: 10, marginTop: 22 }}>
@@ -1567,7 +1697,7 @@ function WeeklyTimesheet({ checkins, sites }) {
 // every project geofence. Captures the project they intend to log against and
 // a free-text reason; submits a Geofence Violation row that puts the day on
 // hold until a manager approves.
-function OutsideZonePopup({ ctx, sites, onCancel, onSubmit, loading }) {
+function OutsideZonePopup({ ctx, sites, requireSelfie = false, onCancel, onSubmit, loading }) {
   const t = useT();
   const isIn = ctx.type === 'IN';
   // Off-zone work may be on ANY project, not just the engineer's geofenced
@@ -1577,6 +1707,7 @@ function OutsideZonePopup({ ctx, sites, onCancel, onSubmit, loading }) {
   const projectOptions = (window.PROJECTS && window.PROJECTS.length) ? window.PROJECTS : sites;
   const [project, setProject] = React.useState(ctx.defaultProject || ctx.nearest?.name || '');
   const [reason, setReason] = React.useState('');
+  const [selfie, setSelfie] = React.useState('');
 
   React.useEffect(() => {
     const onKey = (e) => { if (e.key === 'Escape' && !loading) onCancel(); };
@@ -1585,7 +1716,8 @@ function OutsideZonePopup({ ctx, sites, onCancel, onSubmit, loading }) {
   }, [onCancel, loading]);
 
   const distLabel = ctx.distance >= 1000 ? `${(ctx.distance / 1000).toFixed(1)} km` : `${ctx.distance} m`;
-  const canSubmit = project && reason.trim().length >= 8 && !loading;
+  const selfieOk = !requireSelfie || !!selfie;
+  const canSubmit = project && reason.trim().length >= 8 && selfieOk && !loading;
 
   return ReactDOM.createPortal(
     <div className="modal-backdrop" onClick={loading ? undefined : onCancel}>
@@ -1676,12 +1808,19 @@ function OutsideZonePopup({ ctx, sites, onCancel, onSubmit, loading }) {
             </div>
           </div>
 
+          {requireSelfie && (
+            <div style={{ marginTop: 12 }}>
+              <label className="field-label">{t.selfie} *</label>
+              <SelfieCapture value={selfie} onChange={setSelfie} />
+            </div>
+          )}
+
           {/* Actions */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.4fr', gap: 10, marginTop: 18 }}>
             <button className="btn btn-ghost" onClick={onCancel} disabled={loading}>{t.cancel}</button>
             <button
               className="btn btn-primary"
-              onClick={() => onSubmit({ selected_project: project, reason: reason.trim() })}
+              onClick={() => onSubmit({ selected_project: project, reason: reason.trim(), selfie: selfie || null })}
               disabled={!canSubmit}
             >
               {loading ? <span className="spinner" /> : <Icon name="check" size={16} />}

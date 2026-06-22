@@ -49,6 +49,18 @@
  },
  {
   "doctype": "Custom Field",
+  "name": "Employee-require_selfie",
+  "dt": "Employee",
+  "module": "AKG ESS",
+  "fieldname": "require_selfie",
+  "label": "Require Selfie on Punch",
+  "fieldtype": "Check",
+  "default": "0",
+  "insert_after": "has_overtime",
+  "description": "When checked, this employee must take a selfie to check in / check out (anti-buddy-punching). The photo is stored on the punch for the manager to verify."
+ },
+ {
+  "doctype": "Custom Field",
   "name": "Project-akg_geofence_section",
   "dt": "Project",
   "module": "AKG ESS",
@@ -152,6 +164,18 @@
   "unique": 1,
   "insert_after": "scope_of_work",
   "description": "Idempotency key from the offline outbox. Prevents duplicate posts on retry."
+ },
+ {
+  "doctype": "Custom Field",
+  "name": "Employee Checkin-selfie",
+  "dt": "Employee Checkin",
+  "module": "AKG ESS",
+  "fieldname": "selfie",
+  "label": "Selfie",
+  "fieldtype": "Attach Image",
+  "read_only": 1,
+  "insert_after": "local_id",
+  "description": "Selfie captured at the punch (when the employee has Require Selfie on Punch)."
  },
 
  {
