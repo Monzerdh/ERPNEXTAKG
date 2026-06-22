@@ -42,6 +42,7 @@ function ProfileScreen({ role, setRole, onLogout, outboxCount = 0, onOpenOutbox 
 
       <div className="section-label"><span>{t.app}</span></div>
       <div className="card card-flush">
+        <PushToggle />
         <button className="list-row" style={{ width: '100%', background: 'transparent', border: 0, color: 'inherit', textAlign: 'inherit', cursor: 'pointer' }} onClick={onOpenOutbox}>
           <div className="list-row-icon" style={{ background: outboxCount ? 'var(--warn-100)' : 'var(--surface-2)', color: outboxCount ? 'var(--warn)' : 'var(--text-muted)' }}>
             <Icon name="inbox" size={16} />
@@ -64,6 +65,57 @@ function ProfileScreen({ role, setRole, onLogout, outboxCount = 0, onOpenOutbox 
         AKG ESS · v1.0.0 · Munzer APPs
       </div>
     </>
+  );
+}
+
+// Enable/disable browser push notifications (approvals, decisions).
+function PushToggle() {
+  const t = useT();
+  const toast = useToast();
+  const [state, setState] = React.useState('loading'); // loading|on|off|denied|unsupported
+  const [busy, setBusy] = React.useState(false);
+
+  React.useEffect(() => {
+    if (!window.frappe.pushSupported()) { setState('unsupported'); return; }
+    if (window.frappe.pushPermission() === 'denied') { setState('denied'); return; }
+    window.frappe.isPushEnabled().then((on) => setState(on ? 'on' : 'off')).catch(() => setState('off'));
+  }, []);
+
+  const toggle = async () => {
+    setBusy(true);
+    try {
+      if (state === 'on') { await window.frappe.disablePush(); setState('off'); toast(t.notifs_off, 'ok'); }
+      else { await window.frappe.enablePush(); setState('on'); toast(t.notifs_on, 'ok'); }
+    } catch (e) {
+      toast(e.message || 'Failed', 'bad');
+      if (window.frappe.pushPermission() === 'denied') setState('denied');
+    } finally { setBusy(false); }
+  };
+
+  const sub = state === 'unsupported' ? t.push_unsupported
+    : state === 'denied' ? t.push_denied
+    : state === 'on' ? t.push_on : t.push_off;
+
+  return (
+    <div className="list-row">
+      <div className="list-row-icon" style={{ background: state === 'on' ? 'var(--ok-100)' : 'var(--surface-2)', color: state === 'on' ? 'var(--ok)' : 'var(--text-muted)' }}>
+        <Icon name="bell" size={16} />
+      </div>
+      <div className="list-row-body">
+        <div className="list-row-title">{t.push_notifs}</div>
+        <div className="list-row-sub">{sub}</div>
+      </div>
+      {(state === 'on' || state === 'off') && (
+        <button
+          className="btn btn-sm"
+          style={{ background: state === 'on' ? 'var(--bad-100)' : 'var(--brand)', color: state === 'on' ? 'var(--bad)' : '#fff', marginInlineEnd: 6 }}
+          onClick={toggle}
+          disabled={busy}
+        >
+          {busy ? <span className="spinner" /> : (state === 'on' ? t.disable : t.enable)}
+        </button>
+      )}
+    </div>
   );
 }
 

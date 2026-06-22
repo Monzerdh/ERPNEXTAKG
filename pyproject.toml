@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "akg_ess"
-version = "0.9.17"
+version = "0.9.18"
 description = "Employee Self-Service PWA for AKG Contracting (attendance, leaves, petty cash)."
 requires-python = ">=3.10"
 readme = "README.md"
@@ -23,6 +23,10 @@ dependencies = [
     # adding the constraint here pins the bench's setuptools because
     # pip resolves deps across the whole env.
     "setuptools<81",
+    # NOTE: Web Push (VAPID) is implemented with the `cryptography` already
+    # pinned by Frappe — we deliberately avoid pywebpush/py-vapid because
+    # their newer releases require cryptography>=46, which conflicts with
+    # Frappe's ~=44 pin. See akg_ess/webpush.py (data-less VAPID pushes).
 ]
 
 [tool.setuptools.packages.find]

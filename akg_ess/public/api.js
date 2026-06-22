@@ -204,6 +204,16 @@
     const d = new Date();
     return `${d.getFullYear()}-${_pad(d.getMonth() + 1)}-${_pad(d.getDate())} ${_pad(d.getHours())}:${_pad(d.getMinutes())}:${_pad(d.getSeconds())}`;
   };
+
+  // VAPID applicationServerKey: base64url string -> Uint8Array.
+  function urlB64ToUint8Array(base64String) {
+    const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+    const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+    const raw = atob(base64);
+    const arr = new Uint8Array(raw.length);
+    for (let i = 0; i < raw.length; i++) arr[i] = raw.charCodeAt(i);
+    return arr;
+  }
   const todayISO = () => {
     const d = new Date();
     return `${d.getFullYear()}-${_pad(d.getMonth() + 1)}-${_pad(d.getDate())}`;
@@ -900,6 +910,49 @@
       // (today_status: 'in' | 'out' | 'none') + avatar_initials.
       const r = await callMethod('akg_ess.api.get_team').catch(() => []);
       return Array.isArray(r) ? r : [];
+    },
+
+    // ─── Web Push (VAPID) ────────────────────────────────────────────
+    pushSupported() {
+      return ('serviceWorker' in navigator) && ('PushManager' in window) && ('Notification' in window);
+    },
+    pushPermission() {
+      return (typeof Notification !== 'undefined') ? Notification.permission : 'denied';
+    },
+    async isPushEnabled() {
+      try {
+        const reg = await navigator.serviceWorker.ready;
+        return !!(await reg.pushManager.getSubscription());
+      } catch (e) { return false; }
+    },
+    async enablePush() {
+      if (!('serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window)) {
+        throw new Error('Notifications are not supported on this device.');
+      }
+      const key = await callMethod('akg_ess.api.get_vapid_public_key').catch(() => '');
+      if (!key) throw new Error('Push notifications are not configured yet.');
+      const perm = await Notification.requestPermission();
+      if (perm !== 'granted') throw new Error('Notifications permission was not granted.');
+      const reg = await navigator.serviceWorker.ready;
+      let sub = await reg.pushManager.getSubscription();
+      if (!sub) {
+        sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlB64ToUint8Array(key) });
+      }
+      await callMethod('akg_ess.api.save_push_subscription', {
+        subscription: JSON.stringify(sub.toJSON()), user_agent: navigator.userAgent,
+      });
+      return true;
+    },
+    async disablePush() {
+      try {
+        const reg = await navigator.serviceWorker.ready;
+        const sub = await reg.pushManager.getSubscription();
+        if (sub) {
+          await callMethod('akg_ess.api.delete_push_subscription', { endpoint: sub.endpoint }).catch(() => {});
+          await sub.unsubscribe();
+        }
+      } catch (e) { /* ignore */ }
+      return true;
     },
 
     // ─── Notifications ───────────────────────────────────────────────

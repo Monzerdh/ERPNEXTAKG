@@ -32,6 +32,18 @@ class GeofenceViolation(Document):
             recompute_day(self.employee, frappe.utils.getdate(self.time or self.date))
         except Exception:
             frappe.log_error(frappe.get_traceback(), "GFV after_insert: recompute_day failed")
+        # Notify the approver(s) that a new off-zone request needs review.
+        try:
+            from akg_ess.api import _approver_users
+            from akg_ess.webpush import notify_user
+            ename = frappe.db.get_value("Employee", self.employee, "employee_name") or self.employee
+            lt = "check-in" if (self.log_type or "").upper() == "IN" else "check-out"
+            for u in _approver_users(self.employee):
+                notify_user(u, "Off-zone request",
+                            f"{ename} — off-zone {lt} awaiting your approval.",
+                            target_tab="profile", kind="approval", for_role="manager")
+        except Exception:
+            frappe.log_error(frappe.get_traceback(), "GFV after_insert: notify approvers")
 
 
 def get_permission_query_conditions(user=None):
@@ -136,6 +148,7 @@ def on_status_change(doc, method=None):
         # recompute once more to be safe now that this violation is no longer
         # Pending (so the day can finalise to Present + post HR).
         _recompute(doc.employee, day)
+        _notify_employee(doc, "approved")
 
     elif doc.status == "Rejected":
         if not doc.approver:
@@ -145,6 +158,7 @@ def on_status_change(doc, method=None):
         # Rejected punch is dropped — recompute clears any stale pending
         # placeholder for the day (or holds on a remaining pending punch).
         _recompute(doc.employee, frappe.utils.getdate(doc.time or doc.date))
+        _notify_employee(doc, "rejected")
 
 
 def _recompute(employee, day):
@@ -153,3 +167,18 @@ def _recompute(employee, day):
         recompute_day(employee, day)
     except Exception:
         frappe.log_error(frappe.get_traceback(), "GFV: recompute_day failed")
+
+
+def _notify_employee(doc, decision):
+    """Push the employee that their off-zone punch was approved / rejected."""
+    try:
+        from akg_ess.webpush import notify_user
+        user = frappe.db.get_value("Employee", doc.employee, "user_id")
+        if not user:
+            return
+        lt = "check-in" if (doc.log_type or "").upper() == "IN" else "check-out"
+        title = "Off-zone " + ("approved" if decision == "approved" else "rejected")
+        body = f"Your off-zone {lt} was {decision}."
+        notify_user(user, title, body, target_tab="attendance", kind="approval")
+    except Exception:
+        frappe.log_error(frappe.get_traceback(), "GFV: notify employee")

@@ -129,6 +129,92 @@ def add_punch_selfie(reference_doctype, reference_name, image):
     return f.file_url
 
 
+# ──────────────────────────────────────────────────────────────────────
+# Web Push (VAPID) — subscription management + payload for the SW.
+# ──────────────────────────────────────────────────────────────────────
+@frappe.whitelist()
+def get_vapid_public_key():
+    from akg_ess.webpush import get_keys
+    return (get_keys() or {}).get("public_key", "")
+
+
+@frappe.whitelist()
+def save_push_subscription(subscription, user_agent=None):
+    sub = frappe.parse_json(subscription) if isinstance(subscription, str) else (subscription or {})
+    endpoint = sub.get("endpoint")
+    if not endpoint:
+        frappe.throw("Invalid push subscription.")
+    keys = sub.get("keys") or {}
+    values = {
+        "user": frappe.session.user, "endpoint": endpoint,
+        "p256dh": keys.get("p256dh"), "auth": keys.get("auth"),
+        "user_agent": (user_agent or "")[:140], "enabled": 1,
+    }
+    existing = frappe.db.get_value("ESS Push Subscription", {"endpoint": endpoint}, "name")
+    if existing:
+        d = frappe.get_doc("ESS Push Subscription", existing)
+        d.update(values)
+    else:
+        d = frappe.get_doc({"doctype": "ESS Push Subscription", **values})
+    d.flags.ignore_permissions = True
+    d.save(ignore_permissions=True)
+    frappe.db.commit()
+    return {"ok": True}
+
+
+@frappe.whitelist()
+def delete_push_subscription(endpoint):
+    for name in frappe.get_all(
+        "ESS Push Subscription",
+        filters={"endpoint": endpoint, "user": frappe.session.user}, pluck="name",
+    ):
+        frappe.delete_doc("ESS Push Subscription", name, force=1, ignore_permissions=True)
+    frappe.db.commit()
+    return {"ok": True}
+
+
+@frappe.whitelist()
+def get_push_payload():
+    """Called by the service worker on a data-less push: returns the latest
+    unread notification for the current user (cookie-authed) to display."""
+    emp = _my_employee()
+    roles = set(frappe.get_roles(frappe.session.user))
+    role = "manager" if "ESS Manager" in roles else "employee"
+    params = {"role": role}
+    or_parts = ["for_role = 'all'", "for_role = %(role)s"]
+    if emp:
+        or_parts.append("recipient = %(emp)s")
+        params["emp"] = emp
+    where = "is_read = 0 AND (" + " OR ".join(or_parts) + ")"
+    rows = frappe.db.sql(
+        f"SELECT title, body, target_tab, target_id FROM `tabESS Notification` WHERE {where} ORDER BY creation DESC LIMIT 1",
+        params, as_dict=True,
+    )
+    count = frappe.db.sql(f"SELECT COUNT(*) FROM `tabESS Notification` WHERE {where}", params)[0][0]
+    if rows:
+        r = rows[0]
+        return {"title": r.title or "AKG ESS", "body": r.body or "", "tab": r.target_tab or "", "id": r.target_id or "", "count": count}
+    return {"title": "AKG ESS", "body": "You have a new notification.", "tab": "", "count": count}
+
+
+def _approver_users(employee):
+    """User ids who may approve for `employee`: their leave_approver + their
+    reports_to manager's login. Used to push pending-review alerts."""
+    users = set()
+    if not employee:
+        return users
+    emp = frappe.db.get_value("Employee", employee, ["reports_to", "leave_approver"], as_dict=True) or {}
+    if emp.get("leave_approver"):
+        users.add(emp["leave_approver"])
+    if emp.get("reports_to"):
+        u = frappe.db.get_value("Employee", emp["reports_to"], "user_id")
+        if u:
+            users.add(u)
+    users.discard(None)
+    users.discard("")
+    return users
+
+
 @frappe.whitelist()
 def get_session_profile():
     """One-shot bootstrap: returns everything the PWA needs to populate the
@@ -866,7 +952,29 @@ def submit_missed_checkout(name, proposed_out_time, reason=""):
     except Exception:
         frappe.log_error(frappe.get_traceback(), "AKG ESS · missed pending attendance")
 
+    # Notify the approver(s) that a missed check-out is awaiting review.
+    try:
+        from akg_ess.webpush import notify_user
+        for u in _approver_users(doc.employee):
+            notify_user(u, "Missed check-out",
+                        f"{doc.employee_name or doc.employee} submitted a missed check-out for review.",
+                        target_tab="profile", kind="approval", for_role="manager")
+    except Exception:
+        frappe.log_error(frappe.get_traceback(), "MC notify approvers")
+
     return _serialize_mc(doc.as_dict())
+
+
+def _notify_mc_employee(doc, decision):
+    try:
+        from akg_ess.webpush import notify_user
+        u = frappe.db.get_value("Employee", doc.employee, "user_id")
+        if u:
+            notify_user(u, "Missed check-out " + decision,
+                        f"Your missed check-out was {decision}.",
+                        target_tab="attendance", kind="approval")
+    except Exception:
+        frappe.log_error(frappe.get_traceback(), "MC notify employee")
 
 
 @frappe.whitelist()
@@ -887,6 +995,7 @@ def approve_missed_checkout(name, edited_out_time="", comment=""):
     doc.status = "Approved"
     doc.flags.ignore_permissions = True
     doc.save()
+    _notify_mc_employee(doc, "approved")
     return _serialize_mc(doc.as_dict())
 
 
@@ -904,6 +1013,7 @@ def reject_missed_checkout(name, comment=""):
     doc.status = "Rejected"
     doc.flags.ignore_permissions = True
     doc.save()
+    _notify_mc_employee(doc, "rejected")
     return _serialize_mc(doc.as_dict())
 
 
