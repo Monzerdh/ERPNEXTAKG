@@ -178,6 +178,7 @@
       reports_to_name: profile.reports_to_name || '',
       is_office_worker: !!profile.is_office_worker,
       has_petty_cash: !!profile.has_petty_cash,
+      require_selfie: !!profile.require_selfie,
       default_scope_of_work: profile.default_scope_of_work || '',
       cell_number: profile.cell_number || '',
       date_of_joining: profile.date_of_joining || '',
