@@ -1,0 +1,29 @@
+{
+ "doctype": "Workspace",
+ "name": "AKG ESS",
+ "label": "AKG ESS",
+ "title": "AKG ESS",
+ "module": "AKG ESS",
+ "public": 1,
+ "is_hidden": 0,
+ "icon": "users",
+ "indicator_color": "blue",
+ "sequence_id": 99.0,
+ "content": "[{\"id\":\"hdr1\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\"><b>AKG ESS — Attendance</b></span>\",\"col\":12}},{\"id\":\"sc1\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Attendance Report\",\"col\":3}},{\"id\":\"sc2\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Overtime Summary\",\"col\":3}},{\"id\":\"sc3\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Daily Attendance\",\"col\":3}},{\"id\":\"hdr2\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\"><b>Approvals</b></span>\",\"col\":12}},{\"id\":\"sc4\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Off-zone Reviews\",\"col\":3}},{\"id\":\"sc5\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Missed Check-outs\",\"col\":3}}]",
+ "shortcuts": [
+  {"type": "Report", "label": "Attendance Report", "link_to": "ESS Attendance Report", "doc_view": "Report", "color": "Grey"},
+  {"type": "Report", "label": "Overtime Summary", "link_to": "ESS Overtime Summary", "doc_view": "Report", "color": "Grey"},
+  {"type": "DocType", "label": "Daily Attendance", "link_to": "ESS Daily Attendance", "color": "Grey"},
+  {"type": "DocType", "label": "Off-zone Reviews", "link_to": "Geofence Violation", "color": "Orange"},
+  {"type": "DocType", "label": "Missed Check-outs", "link_to": "Missed Checkout", "color": "Orange"}
+ ],
+ "links": [
+  {"label": "Reports", "type": "Card Break", "hidden": 0, "onboard": 0},
+  {"label": "ESS Attendance Report", "type": "Link", "link_type": "Report", "link_to": "ESS Attendance Report", "is_query_report": 1, "dependencies": "ESS Daily Attendance"},
+  {"label": "ESS Overtime Summary", "type": "Link", "link_type": "Report", "link_to": "ESS Overtime Summary", "is_query_report": 1, "dependencies": "ESS Daily Attendance"},
+  {"label": "Records", "type": "Card Break", "hidden": 0, "onboard": 0},
+  {"label": "ESS Daily Attendance", "type": "Link", "link_type": "DocType", "link_to": "ESS Daily Attendance"},
+  {"label": "Geofence Violation", "type": "Link", "link_type": "DocType", "link_to": "Geofence Violation"},
+  {"label": "Missed Checkout", "type": "Link", "link_type": "DocType", "link_to": "Missed Checkout"}
+ ]
+}
