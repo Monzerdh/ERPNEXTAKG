@@ -178,6 +178,101 @@ function ApprovalsSection({ role }) {
       )}
       <GeofenceViolations mode={mode} />
       {window.MissedCheckoutsQueue && <MissedCheckoutsQueue mode={mode} />}
+      <CorrectionsQueue mode={mode} />
+    </>
+  );
+}
+
+// Attendance correction requests — Me (read-only) / My team (approve/reject).
+function CorrectionsQueue({ mode = 'team' }) {
+  const t = useT();
+  const toast = useToast();
+  const [rows, setRows] = React.useState([]);
+  const [tab, setTab] = React.useState('pending');
+  const [busy, setBusy] = React.useState(null);
+  const canAct = mode === 'team';
+
+  const refresh = React.useCallback(() => {
+    const p = mode === 'team' ? window.frappe.getTeamCorrections() : window.frappe.getMyCorrections();
+    Promise.resolve(p).then((r) => setRows(r || [])).catch(() => setRows([]));
+  }, [mode]);
+  React.useEffect(() => { refresh(); }, [refresh]);
+
+  const pending = rows.filter((r) => r.status === 'Pending');
+  const reviewed = rows.filter((r) => r.status !== 'Pending');
+  const list = tab === 'pending' ? pending : reviewed;
+
+  const act = async (row, kind) => {
+    setBusy(row.name);
+    try {
+      if (kind === 'approve') { await window.frappe.bulkDecideCorrections([row.name], 'approve'); toast(`${row.employee_name} · ${t.approved}`, 'ok'); }
+      else { await window.frappe.bulkDecideCorrections([row.name], 'reject'); toast(`${row.employee_name} · ${t.rejected}`, 'bad'); }
+      refresh();
+    } catch (e) { toast(e.message || 'Failed', 'bad'); } finally { setBusy(null); }
+  };
+
+  const proposed = (x) => [
+    x.in_time && `${t.check_in} ${x.in_time}`,
+    x.in_project && `→ ${x.in_project}`,
+    x.out_time && `${t.check_out} ${x.out_time}`,
+    x.out_project && `→ ${x.out_project}`,
+    x.scope_of_work && `· ${x.scope_of_work}`,
+  ].filter(Boolean).join('  ');
+
+  return (
+    <>
+      <div className="section-label" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <span>{t.corrections}</span>
+        {pending.length > 0 && <span className="chip chip-warn chip-dot">{pending.length} {t.pending_review}</span>}
+      </div>
+      <div className="seg" role="tablist" style={{ marginBottom: 8 }}>
+        <button type="button" className={`seg-btn ${tab === 'pending' ? 'active' : ''}`} onClick={() => setTab('pending')}>{t.pending_review} ({pending.length})</button>
+        <button type="button" className={`seg-btn ${tab === 'reviewed' ? 'active' : ''}`} onClick={() => setTab('reviewed')}>{t.reviewed} ({reviewed.length})</button>
+      </div>
+      {list.length === 0 ? (
+        <div className="card" style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: 13, padding: '20px 16px' }}>
+          <Icon name="check" size={20} style={{ color: 'var(--ok)', marginBottom: 6 }} />
+          <div>{t.no_corrections}</div>
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {list.map((x) => {
+            const isBusy = busy === x.name;
+            const statusChip = x.status === 'Approved' ? <span className="chip chip-ok">{t.approved}</span>
+              : x.status === 'Rejected' ? <span className="chip" style={{ background: 'var(--bad-100)', color: 'var(--bad)' }}>{t.rejected}</span>
+              : <span className="chip chip-warn chip-dot">{t.pending_review}</span>;
+            return (
+              <div key={x.name} className="card" style={{ padding: 0, overflow: 'hidden' }}>
+                <div style={{ padding: 14 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                    <div style={{ fontSize: 14, fontWeight: 700 }} className="truncate">{x.employee_name}</div>
+                    {statusChip}
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+                    <span className="chip" style={{ background: 'var(--ink-100)', color: 'var(--text-muted)', fontSize: 10 }}>{x.correction_type}</span>
+                    {' '}{fmtDateShort(x.date)}
+                  </div>
+                  <div style={{ marginTop: 10, fontSize: 12, fontWeight: 600 }}>{proposed(x) || '—'}</div>
+                  <div style={{ marginTop: 8, padding: '8px 10px', background: 'var(--ink-50)', borderRadius: 8, fontSize: 12, lineHeight: 1.45 }}>"{x.reason}"</div>
+                  {x.status !== 'Pending' && x.approver_comment && (
+                    <div style={{ marginTop: 8, fontSize: 11, color: 'var(--text-muted)' }}><strong>{x.approver}:</strong> {x.approver_comment}</div>
+                  )}
+                </div>
+                {canAct && x.status === 'Pending' && (
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 0, borderTop: '1px solid var(--ink-200)' }}>
+                    <button onClick={() => act(x, 'reject')} disabled={isBusy} style={{ padding: '12px 14px', background: 'transparent', border: 0, borderRight: '1px solid var(--ink-200)', color: 'var(--bad)', fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                      <Icon name="x" size={14} /> {t.reject_violation}
+                    </button>
+                    <button onClick={() => act(x, 'approve')} disabled={isBusy} style={{ padding: '12px 14px', background: 'var(--ok-100)', border: 0, color: 'var(--ok)', fontSize: 13, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                      {isBusy ? <span className="spinner" /> : <Icon name="check" size={14} />} {t.approve_release}
+                    </button>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
     </>
   );
 }

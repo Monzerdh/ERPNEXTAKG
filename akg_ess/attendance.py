@@ -213,6 +213,59 @@ def _pending_violation(employee, day, log_type):
     return rows[0] if rows else None
 
 
+def apply_correction(employee, day, in_time=None, in_project=None, out_time=None, out_project=None, scope=None):
+    """Apply a manager-approved attendance correction to a day's Employee
+    Checkins, then recompute. Only the provided fields change. Times are
+    'HH:MM' (or 'HH:MM:SS'); creating a punch that doesn't exist is allowed
+    (e.g. a forgotten check-in)."""
+    from frappe.utils import getdate
+    day = getdate(day)
+    if in_time:
+        _correct_checkin(employee, day, "IN", in_time, project=in_project)
+    elif in_project:
+        _correct_checkin(employee, day, "IN", None, project=in_project)
+    if out_time:
+        _correct_checkin(employee, day, "OUT", out_time, project=out_project, scope=scope)
+    elif out_project or scope:
+        _correct_checkin(employee, day, "OUT", None, project=out_project, scope=scope)
+    recompute_day(employee, day)
+
+
+def _correct_checkin(employee, day, log_type, hhmm, project=None, scope=None):
+    """Update (or create when hhmm is given) the day's IN/OUT Employee Checkin
+    with the corrected time/project/scope. System insert — bypasses the guard
+    and keeps the manager-specified time."""
+    day_start = f"{day} 00:00:00"
+    day_end = f"{day} 23:59:59"
+    existing = frappe.get_all(
+        "Employee Checkin",
+        filters=[["employee", "=", employee], ["log_type", "=", log_type],
+                 ["time", ">=", day_start], ["time", "<=", day_end]],
+        fields=["name"], limit=1,
+    )
+    ts = None
+    if hhmm:
+        ts = f"{day} {hhmm}" if len(str(hhmm)) > 5 else f"{day} {hhmm}:00"
+    if existing:
+        vals = {}
+        if ts:
+            vals["time"] = ts
+        if project:
+            vals["project"] = project
+        if scope is not None and scope != "":
+            vals["scope_of_work"] = scope
+        if vals:
+            frappe.db.set_value("Employee Checkin", existing[0]["name"], vals, update_modified=False)
+    elif ts:
+        doc = frappe.get_doc({
+            "doctype": "Employee Checkin", "employee": employee, "log_type": log_type,
+            "time": ts, "project": project or None, "scope_of_work": scope or None,
+            "device_id": "ESS-CORRECTION", "skip_auto_attendance": 1,
+        })
+        doc.flags.ignore_permissions = True
+        doc.insert(ignore_permissions=True)
+
+
 def _day_has_pending_hold(employee, day):
     """True if the day is on hold (geofence violation or missed-checkout
     still pending manager review)."""

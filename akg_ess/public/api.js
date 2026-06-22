@@ -400,6 +400,25 @@
       }).catch(() => []);
     },
 
+    // ─── Attendance corrections ──────────────────────────────────────
+    async submitCorrection(payload) {
+      return callMethod('akg_ess.api.submit_correction', payload || {});
+    },
+    async getMyCorrections() {
+      const r = await callMethod('akg_ess.api.get_my_corrections').catch(() => []);
+      return Array.isArray(r) ? r : [];
+    },
+    async getTeamCorrections(opts = {}) {
+      const r = await callMethod('akg_ess.api.get_team_corrections', {
+        employee: opts.employee || null, from_date: opts.from_date || null,
+        to_date: opts.to_date || null, limit: opts.limit || 200, start: opts.start || 0,
+      }).catch(() => []);
+      return Array.isArray(r) ? r : [];
+    },
+    async bulkDecideCorrections(names, action, comment) {
+      return callMethod('akg_ess.api.decide_corrections', { names, action, comment: comment || null });
+    },
+
     // Attach a selfie (data URL) to the current employee's own punch.
     async addPunchSelfie(reference_doctype, reference_name, image) {
       if (!image) return null;

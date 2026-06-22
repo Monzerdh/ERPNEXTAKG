@@ -1,0 +1,68 @@
+{
+ "actions": [],
+ "autoname": "format:ACR-{YYYY}-{#####}",
+ "creation": "2026-06-22 00:00:00.000000",
+ "doctype": "DocType",
+ "name": "ESS Attendance Correction",
+ "editable_grid": 0,
+ "engine": "InnoDB",
+ "field_order": [
+  "section_who",
+  "employee", "employee_name", "is_office_worker",
+  "column_break_1",
+  "date", "correction_type", "status",
+  "section_proposed",
+  "in_time", "in_project",
+  "column_break_2",
+  "out_time", "out_project", "scope_of_work",
+  "section_reason",
+  "reason",
+  "section_decision",
+  "approver", "approver_comment", "approved_on",
+  "applied", "applied_on", "submitted_on"
+ ],
+ "fields": [
+  {"fieldname": "section_who",       "fieldtype": "Section Break", "label": "Employee"},
+  {"fieldname": "employee",          "fieldtype": "Link", "options": "Employee", "label": "Employee", "reqd": 1, "in_standard_filter": 1, "in_list_view": 1, "search_index": 1},
+  {"fieldname": "employee_name",     "fieldtype": "Data", "label": "Employee Name", "fetch_from": "employee.employee_name", "read_only": 1, "in_list_view": 1},
+  {"fieldname": "is_office_worker",  "fieldtype": "Check", "label": "Is Office Worker", "fetch_from": "employee.is_office_worker", "read_only": 1},
+  {"fieldname": "column_break_1",    "fieldtype": "Column Break"},
+  {"fieldname": "date",              "fieldtype": "Date", "label": "Date", "reqd": 1, "in_list_view": 1, "in_standard_filter": 1, "search_index": 1},
+  {"fieldname": "correction_type",   "fieldtype": "Select", "options": "Wrong time\nWrong project\nMissing punch\nOther", "default": "Wrong time", "label": "Correction Type", "in_standard_filter": 1},
+  {"fieldname": "status",            "fieldtype": "Select", "options": "Pending\nApproved\nRejected", "default": "Pending", "label": "Status", "reqd": 1, "in_list_view": 1, "in_standard_filter": 1, "search_index": 1},
+
+  {"fieldname": "section_proposed",  "fieldtype": "Section Break", "label": "Proposed correction", "description": "Fill only what needs fixing. Blank fields are left unchanged."},
+  {"fieldname": "in_time",           "fieldtype": "Data", "label": "Check-in time (HH:MM)"},
+  {"fieldname": "in_project",        "fieldtype": "Link", "options": "Project", "label": "Check-in Project"},
+  {"fieldname": "column_break_2",    "fieldtype": "Column Break"},
+  {"fieldname": "out_time",          "fieldtype": "Data", "label": "Check-out time (HH:MM)"},
+  {"fieldname": "out_project",       "fieldtype": "Link", "options": "Project", "label": "Check-out Project"},
+  {"fieldname": "scope_of_work",     "fieldtype": "Link", "options": "Scope of Work", "label": "Scope of Work"},
+
+  {"fieldname": "section_reason",    "fieldtype": "Section Break"},
+  {"fieldname": "reason",            "fieldtype": "Small Text", "label": "Reason", "reqd": 1},
+
+  {"fieldname": "section_decision",  "fieldtype": "Section Break", "label": "Decision"},
+  {"fieldname": "approver",          "fieldtype": "Link", "options": "User", "label": "Approver", "read_only": 1},
+  {"fieldname": "approver_comment",  "fieldtype": "Small Text", "label": "Approver comment"},
+  {"fieldname": "approved_on",       "fieldtype": "Datetime", "label": "Decided on", "read_only": 1},
+  {"fieldname": "applied",           "fieldtype": "Check", "label": "Applied", "read_only": 1, "description": "Set once the corrected check-ins have been written and the day recomputed."},
+  {"fieldname": "applied_on",        "fieldtype": "Datetime", "label": "Applied on", "read_only": 1},
+  {"fieldname": "submitted_on",      "fieldtype": "Datetime", "label": "Submitted on", "read_only": 1}
+ ],
+ "module": "AKG ESS",
+ "naming_rule": "Expression",
+ "owner": "Administrator",
+ "permissions": [
+  {"role": "System Manager", "read": 1, "write": 1, "create": 1, "delete": 1, "report": 1, "export": 1, "share": 1},
+  {"role": "HR Manager",     "read": 1, "write": 1, "create": 1, "delete": 0, "report": 1, "export": 1, "share": 1},
+  {"role": "Employee",       "read": 1, "write": 0, "create": 1, "delete": 0, "report": 0, "export": 0, "share": 0, "if_owner": 1},
+  {"role": "ESS User",       "read": 1, "write": 0, "create": 1, "delete": 0, "report": 0, "export": 0, "share": 0, "if_owner": 1},
+  {"role": "ESS Manager",    "read": 1, "write": 1, "create": 1, "delete": 0, "report": 1, "export": 1, "share": 0}
+ ],
+ "search_fields": "employee_name,date,status,correction_type",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "title_field": "employee_name",
+ "track_changes": 1
+}

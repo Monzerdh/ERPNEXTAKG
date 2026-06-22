@@ -11,6 +11,8 @@ function MonthlyReport({ role, onBack }) {
   const [data, setData] = React.useState(null);
   const [loading, setLoading] = React.useState(true);
   const [selected, setSelected] = React.useState(null);
+  const [correctionModal, setCorrectionModal] = React.useState(null);
+  const isOwn = employee === window.CURRENT_USER.employee;
 
   React.useEffect(() => {
     if (role === 'manager') window.frappe.getTeam().then(setTeam);
@@ -76,8 +78,22 @@ function MonthlyReport({ role, onBack }) {
         <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '.08em', fontWeight: 700 }}>
           {t.monthly_attendance_kicker}
         </div>
-        <div style={{ width: 70 }} />
+        {isOwn ? (
+          <button className="btn btn-ghost btn-sm" onClick={() => setCorrectionModal({ date: (selected && selected.date) || new Date().toISOString().slice(0, 10) })}>
+            <Icon name="edit" size={14} /> {t.request_fix}
+          </button>
+        ) : (
+          <div style={{ width: 70 }} />
+        )}
       </div>
+
+      {correctionModal && (
+        <CorrectionModal
+          initialDate={correctionModal.date}
+          onClose={() => setCorrectionModal(null)}
+          onSubmitted={() => window.frappe.getMonthlyAttendance(employee, year, month).then(setData)}
+        />
+      )}
 
       {/* Employee picker */}
       {teamPicker}
@@ -226,6 +242,130 @@ function LegendDot({ color, label }) {
       <span style={{ width: 10, height: 10, borderRadius: 3, background: color, display: 'inline-block' }} />
       <span>{label}</span>
     </div>
+  );
+}
+
+// ─── Request a correction ─────────────────────────────────────────────
+// Employee proposes a fix to a day (in/out time, project, scope) + reason.
+// Goes to their manager for approval; on approve the day is corrected.
+function CorrectionModal({ initialDate, onClose, onSubmitted }) {
+  const t = useT();
+  const toast = useToast();
+  const [date, setDate] = React.useState(initialDate || new Date().toISOString().slice(0, 10));
+  const [ctype, setCtype] = React.useState('Wrong time');
+  const [inTime, setInTime] = React.useState('');
+  const [inProject, setInProject] = React.useState('');
+  const [outTime, setOutTime] = React.useState('');
+  const [outProject, setOutProject] = React.useState('');
+  const [scope, setScope] = React.useState('');
+  const [reason, setReason] = React.useState('');
+  const [scopes, setScopes] = React.useState([]);
+  const [busy, setBusy] = React.useState(false);
+
+  React.useEffect(() => { window.frappe.getScopesOfWork().then(setScopes).catch(() => {}); }, []);
+  React.useEffect(() => {
+    const onKey = (e) => { if (e.key === 'Escape' && !busy) onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose, busy]);
+
+  const projects = window.PROJECTS || [];
+  const hasChange = inTime || inProject || outTime || outProject || scope;
+  const canSubmit = date && reason.trim().length >= 5 && hasChange && !busy;
+
+  const submit = async () => {
+    setBusy(true);
+    try {
+      await window.frappe.submitCorrection({
+        date, correction_type: ctype, reason: reason.trim(),
+        in_time: inTime || null, in_project: inProject || null,
+        out_time: outTime || null, out_project: outProject || null, scope_of_work: scope || null,
+      });
+      toast(t.correction_sent, 'ok');
+      if (onSubmitted) onSubmitted();
+      onClose();
+    } catch (e) {
+      toast(e.message || 'Failed', 'bad');
+    } finally { setBusy(false); }
+  };
+
+  return ReactDOM.createPortal(
+    <div className="modal-backdrop" onClick={busy ? undefined : onClose}>
+      <div className="modal-sheet" onClick={(e) => e.stopPropagation()}>
+        <div style={{ padding: '20px 20px 18px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
+            <div style={{ width: 32, height: 32, borderRadius: 10, background: 'var(--navy-100)', color: 'var(--navy-800)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Icon name="edit" size={18} />
+            </div>
+            <div style={{ fontSize: 17, fontWeight: 700, letterSpacing: '-0.01em' }}>{t.request_fix}</div>
+          </div>
+          <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 14 }}>{t.correction_hint}</div>
+
+          <div className="row" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            <div>
+              <label className="field-label">{t.date}</label>
+              <input type="date" className="select" value={date} onChange={(e) => setDate(e.target.value)} disabled={busy} />
+            </div>
+            <div>
+              <label className="field-label">{t.correction_type}</label>
+              <select className="select" value={ctype} onChange={(e) => setCtype(e.target.value)} disabled={busy}>
+                {['Wrong time', 'Wrong project', 'Missing punch', 'Other'].map((o) => <option key={o} value={o}>{o}</option>)}
+              </select>
+            </div>
+          </div>
+
+          <div className="row" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 10 }}>
+            <div>
+              <label className="field-label">{t.check_in} ({t.time_label})</label>
+              <input type="time" className="select" value={inTime} onChange={(e) => setInTime(e.target.value)} disabled={busy} />
+            </div>
+            <div>
+              <label className="field-label">{t.check_in} {t.project_label}</label>
+              <select className="select" value={inProject} onChange={(e) => setInProject(e.target.value)} disabled={busy}>
+                <option value="">—</option>
+                {projects.map((p) => <option key={p.name} value={p.name}>{p.project_name || p.name}</option>)}
+              </select>
+            </div>
+          </div>
+
+          <div className="row" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 10 }}>
+            <div>
+              <label className="field-label">{t.check_out} ({t.time_label})</label>
+              <input type="time" className="select" value={outTime} onChange={(e) => setOutTime(e.target.value)} disabled={busy} />
+            </div>
+            <div>
+              <label className="field-label">{t.check_out} {t.project_label}</label>
+              <select className="select" value={outProject} onChange={(e) => setOutProject(e.target.value)} disabled={busy}>
+                <option value="">—</option>
+                {projects.map((p) => <option key={p.name} value={p.name}>{p.project_name || p.name}</option>)}
+              </select>
+            </div>
+          </div>
+
+          <div style={{ marginTop: 10 }}>
+            <label className="field-label">{t.scope_of_work}</label>
+            <select className="select" value={scope} onChange={(e) => setScope(e.target.value)} disabled={busy}>
+              <option value="">—</option>
+              {scopes.map((sc) => <option key={sc.name} value={sc.name}>{sc.scope_name || sc.name}</option>)}
+            </select>
+          </div>
+
+          <div style={{ marginTop: 12 }}>
+            <label className="field-label">{t.reason} *</label>
+            <textarea className="field-textarea" value={reason} onChange={(e) => setReason(e.target.value)} placeholder={t.correction_reason_ph} rows={3} disabled={busy} style={{ minHeight: 70 }} />
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.3fr', gap: 10, marginTop: 16 }}>
+            <button className="btn btn-ghost" onClick={onClose} disabled={busy}>{t.cancel}</button>
+            <button className="btn btn-primary" onClick={submit} disabled={!canSubmit}>
+              {busy ? <span className="spinner" /> : <Icon name="check" size={16} />}
+              {t.submit_for_review}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>,
+    document.body
   );
 }
 

@@ -39,6 +39,11 @@ doc_events = {
     "Missed Checkout": {
         "on_update": "akg_ess.akg_ess.doctype.missed_checkout.missed_checkout.on_status_change",
     },
+    # When an attendance correction is approved, apply it to the day's
+    # Employee Checkins and recompute.
+    "ESS Attendance Correction": {
+        "on_update": "akg_ess.akg_ess.doctype.ess_attendance_correction.ess_attendance_correction.on_status_change",
+    },
     # ALL employees are limited to exactly one IN and one OUT per calendar
     # day (single-session model). before_insert rejects duplicates so
     # retries / the offline outbox can't create a second clock-in.
@@ -102,6 +107,7 @@ permission_query_conditions = {
     "Missed Checkout":  "akg_ess.akg_ess.doctype.missed_checkout.missed_checkout.get_permission_query_conditions",
     "ESS Daily Attendance": "akg_ess.akg_ess.doctype.ess_daily_attendance.ess_daily_attendance.get_permission_query_conditions",
     "Geofence Violation": "akg_ess.akg_ess.doctype.geofence_violation.geofence_violation.get_permission_query_conditions",
+    "ESS Attendance Correction": "akg_ess.akg_ess.doctype.ess_attendance_correction.ess_attendance_correction.get_permission_query_conditions",
 }
 
 # ──────────────────────────────────────────────────────────────────────

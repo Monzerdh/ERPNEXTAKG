@@ -839,6 +839,133 @@ def decide_violations(names, action, comment=None):
     return {"done": done, "failed": failed}
 
 
+# ──────────────────────────────────────────────────────────────────────
+# Attendance corrections — employee proposes a fix; manager approves.
+# ──────────────────────────────────────────────────────────────────────
+_CORR_FIELDS = [
+    "name", "date", "correction_type", "status", "in_time", "in_project",
+    "out_time", "out_project", "scope_of_work", "reason", "approver",
+    "approver_comment", "approved_on", "employee", "employee_name",
+]
+
+
+@frappe.whitelist()
+def submit_correction(date, reason, correction_type="Wrong time", in_time=None,
+                      in_project=None, out_time=None, out_project=None, scope_of_work=None):
+    emp = _my_employee()
+    if not emp:
+        frappe.throw("No employee is linked to your user.")
+    if not (reason and reason.strip()):
+        frappe.throw("A reason is required.")
+    if not any([in_time, in_project, out_time, out_project, scope_of_work]):
+        frappe.throw("Specify at least one thing to correct (time, project or scope).")
+    doc = frappe.get_doc({
+        "doctype": "ESS Attendance Correction",
+        "employee": emp, "date": date, "correction_type": correction_type or "Wrong time",
+        "status": "Pending", "reason": reason.strip(),
+        "in_time": (in_time or "").strip() or None, "in_project": in_project or None,
+        "out_time": (out_time or "").strip() or None, "out_project": out_project or None,
+        "scope_of_work": scope_of_work or None,
+        "submitted_on": frappe.utils.now_datetime(),
+    })
+    doc.flags.ignore_permissions = True
+    doc.insert(ignore_permissions=True)
+    frappe.db.commit()
+    try:
+        from akg_ess.webpush import notify_user
+        ename = frappe.db.get_value("Employee", emp, "employee_name") or emp
+        for u in _approver_users(emp):
+            notify_user(u, "Attendance correction",
+                        f"{ename} requested a correction for {date}.",
+                        target_tab="profile", kind="approval", for_role="manager")
+    except Exception:
+        frappe.log_error(frappe.get_traceback(), "correction notify approvers")
+    return {"name": doc.name}
+
+
+@frappe.whitelist()
+def approve_correction(name, comment=None, in_time=None, in_project=None,
+                       out_time=None, out_project=None, scope_of_work=None):
+    doc = frappe.get_doc("ESS Attendance Correction", name)
+    if doc.status != "Pending":
+        frappe.throw("Only Pending corrections can be approved.")
+    if not _can_approve(frappe.session.user, doc.employee):
+        frappe.throw("You can only approve corrections for your own team members.")
+    for f, v in {"in_time": in_time, "in_project": in_project, "out_time": out_time,
+                 "out_project": out_project, "scope_of_work": scope_of_work}.items():
+        if v not in (None, ""):
+            doc.set(f, v)
+    doc.approver = frappe.session.user
+    doc.approver_comment = (comment or "").strip()
+    doc.approved_on = frappe.utils.now_datetime()
+    doc.status = "Approved"
+    doc.flags.ignore_permissions = True
+    doc.save()  # on_status_change applies the correction + notifies
+    return {"name": doc.name, "status": doc.status}
+
+
+@frappe.whitelist()
+def reject_correction(name, comment=None):
+    doc = frappe.get_doc("ESS Attendance Correction", name)
+    if doc.status != "Pending":
+        frappe.throw("Only Pending corrections can be rejected.")
+    if not _can_approve(frappe.session.user, doc.employee):
+        frappe.throw("You can only reject corrections for your own team members.")
+    doc.approver = frappe.session.user
+    doc.approver_comment = (comment or "Rejected").strip()
+    doc.approved_on = frappe.utils.now_datetime()
+    doc.status = "Rejected"
+    doc.flags.ignore_permissions = True
+    doc.save()
+    return {"name": doc.name, "status": doc.status}
+
+
+@frappe.whitelist()
+def get_my_corrections():
+    emp = _my_employee()
+    if not emp:
+        return []
+    return frappe.get_all(
+        "ESS Attendance Correction", filters={"employee": emp},
+        fields=_CORR_FIELDS, order_by="modified desc", limit_page_length=100, ignore_permissions=True,
+    )
+
+
+@frappe.whitelist()
+def get_team_corrections(employee=None, from_date=None, to_date=None, limit=200, start=0):
+    filters = _team_scope_filters(employee)
+    if filters is None:
+        return []
+    filters.append(["status", "in", ["Pending", "Approved", "Rejected"]])
+    if from_date:
+        filters.append(["date", ">=", from_date])
+    if to_date:
+        filters.append(["date", "<=", to_date])
+    return frappe.get_all(
+        "ESS Attendance Correction", filters=filters, fields=_CORR_FIELDS,
+        order_by="modified desc", limit_page_length=int(limit or 200), limit_start=int(start or 0), ignore_permissions=True,
+    )
+
+
+@frappe.whitelist()
+def decide_corrections(names, action, comment=None):
+    names = frappe.parse_json(names) if isinstance(names, str) else (names or [])
+    done, failed = [], []
+    for i, name in enumerate(names):
+        sp = f"cor_{i}"
+        frappe.db.savepoint(sp)
+        try:
+            if action == "approve":
+                approve_correction(name)
+            else:
+                reject_correction(name, comment or "")
+            done.append(name)
+        except Exception:
+            frappe.db.rollback(save_point=sp)
+            failed.append(name)
+    return {"done": done, "failed": failed}
+
+
 @frappe.whitelist()
 def get_my_missed_checkouts():
     """The current employee's own missed-checkouts (all statuses) for the
