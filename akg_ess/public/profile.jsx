@@ -95,27 +95,30 @@ function PushToggle() {
   const sub = state === 'unsupported' ? t.push_unsupported
     : state === 'denied' ? t.push_denied
     : state === 'on' ? t.push_on : t.push_off;
+  const actionable = state !== 'unsupported' && state !== 'denied';
 
   return (
-    <div className="list-row">
+    <button
+      className="list-row"
+      style={{ width: '100%', background: 'transparent', border: 0, color: 'inherit', textAlign: 'inherit', cursor: actionable ? 'pointer' : 'default' }}
+      onClick={actionable && !busy ? toggle : undefined}
+      disabled={!actionable || busy}
+    >
       <div className="list-row-icon" style={{ background: state === 'on' ? 'var(--ok-100)' : 'var(--surface-2)', color: state === 'on' ? 'var(--ok)' : 'var(--text-muted)' }}>
         <Icon name="bell" size={16} />
       </div>
       <div className="list-row-body">
         <div className="list-row-title">{t.push_notifs}</div>
-        <div className="list-row-sub">{sub}</div>
+        <div className="list-row-sub">{busy ? '…' : sub}</div>
       </div>
-      {(state === 'on' || state === 'off') && (
-        <button
-          className="btn btn-sm"
-          style={{ background: state === 'on' ? 'var(--bad-100)' : 'var(--brand)', color: state === 'on' ? 'var(--bad)' : '#fff', marginInlineEnd: 6 }}
-          onClick={toggle}
-          disabled={busy}
-        >
-          {busy ? <span className="spinner" /> : (state === 'on' ? t.disable : t.enable)}
-        </button>
-      )}
-    </div>
+      {busy ? (
+        <span className="spinner" style={{ marginInlineEnd: 6 }} />
+      ) : actionable ? (
+        <span className={`chip ${state === 'on' ? 'chip-warn' : 'chip-info'}`} style={{ marginInlineEnd: 6 }}>
+          {state === 'on' ? t.disable : t.enable}
+        </span>
+      ) : null}
+    </button>
   );
 }
 
