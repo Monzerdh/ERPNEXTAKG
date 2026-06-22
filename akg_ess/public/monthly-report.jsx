@@ -271,7 +271,12 @@ function CorrectionModal({ initialDate, onClose, onSubmitted }) {
 
   const projects = window.PROJECTS || [];
   const hasChange = inTime || inProject || outTime || outProject || scope;
-  const canSubmit = date && reason.trim().length >= 5 && hasChange && !busy;
+  // To ADD a missing day you must give a time (a punch can't exist without
+  // one); re-tagging a project/scope only works on a day that already has a
+  // check-in.
+  const needsTime = ctype === 'Missing punch';
+  const timeOk = !needsTime || inTime || outTime;
+  const canSubmit = date && reason.trim().length >= 5 && hasChange && timeOk && !busy;
 
   const submit = async () => {
     setBusy(true);
@@ -300,6 +305,9 @@ function CorrectionModal({ initialDate, onClose, onSubmitted }) {
             <div style={{ fontSize: 17, fontWeight: 700, letterSpacing: '-0.01em' }}>{t.request_fix}</div>
           </div>
           <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 14 }}>{t.correction_hint}</div>
+          {needsTime && !timeOk && (
+            <div style={{ fontSize: 11.5, color: 'var(--warn)', marginBottom: 10, fontWeight: 600 }}>{t.correction_need_time}</div>
+          )}
 
           <div className="row" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
             <div>

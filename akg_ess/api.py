@@ -859,6 +859,15 @@ def submit_correction(date, reason, correction_type="Wrong time", in_time=None,
         frappe.throw("A reason is required.")
     if not any([in_time, in_project, out_time, out_project, scope_of_work]):
         frappe.throw("Specify at least one thing to correct (time, project or scope).")
+    # A project/scope-only correction can only RE-tag an existing punch. If the
+    # day has no recorded check-in yet, there's nothing to attach it to and no
+    # time to create one — so require a time to add a brand-new day.
+    if not in_time and not out_time:
+        has_punch = frappe.db.exists("Employee Checkin", [
+            ["employee", "=", emp], ["time", ">=", f"{date} 00:00:00"], ["time", "<=", f"{date} 23:59:59"],
+        ])
+        if not has_punch:
+            frappe.throw("This day has no record yet — enter a check-in and/or check-out time to add it.")
     doc = frappe.get_doc({
         "doctype": "ESS Attendance Correction",
         "employee": emp, "date": date, "correction_type": correction_type or "Wrong time",
