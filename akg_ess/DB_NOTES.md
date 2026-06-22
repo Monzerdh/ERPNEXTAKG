@@ -71,6 +71,44 @@ Things to keep an eye on as the company grows:
 - **Behaviour is covered by tests** (`bench run-tests --app akg_ess`), so schema
   / logic changes are caught before they reach production. See TESTING.md.
 
+## Referential integrity & delete safety
+
+Short version: **you cannot wipe related data by deleting a category/tag/master
+record.** Three independent layers protect the data:
+
+1. **Link integrity (app-layer).** Frappe refuses to delete any record that
+   another record points to, with a clear "linked with …" error. Verified live
+   against this DB — deleting a referenced Project, Scope of Work, Employee,
+   Leave Type or Department is **blocked**. There are **no raw-SQL foreign keys
+   with `ON DELETE CASCADE`**, so a delete never fans out.
+
+2. **Flat schema, no cascade.** Every ESS DocType (ESS Daily Attendance,
+   Geofence Violation, Missed Checkout, ESS Notification, ESS Attendance
+   Correction, ESS Push Subscription, Scope of Work, AKG ESS Settings) is flat
+   (no child tables) and non-submittable — so there is no parent→child cascade.
+   A test (`tests/test_integrity.py`) fails if anyone later adds a child table,
+   a submittable flag, or an `on_trash`/`before_delete` cascade hook.
+
+3. **Delete permissions are locked down.** On ESS Daily Attendance and Geofence
+   Violation, only **System Manager** has `delete`; HR Manager, ESS Manager,
+   ESS User and Employee cannot delete these rows at all. So an ordinary user
+   adjusting filters/tags can't remove attendance data even by accident.
+
+What *can* legitimately remove data, and why it's safe:
+- A user deleting **their own** push subscription (single row).
+- `recompute_day` dropping **one** stale "Pending Approval" placeholder when a
+  punch was rejected (single row, re-derivable).
+- `reset_day` — a **System-Manager-only, manual** test helper scoped to one
+  employee + one day.
+
+None of these are triggered by editing a filter, tag, or category. Deleting a
+single Employee Checkin is also safe: `recompute_day` simply re-derives that
+day from whatever punches remain (single source of truth).
+
+> Tags and saved filters are Frappe metadata (`_user_tags`, list settings) —
+> deleting them never touches business data. Changing a Select field's options
+> edits the schema, it does not delete rows.
+
 ## Maintenance
 
 MariaDB auto-updates index statistics, but after a large bulk import you can
