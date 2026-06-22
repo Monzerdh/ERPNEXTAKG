@@ -778,7 +778,13 @@ function OfficeAttendanceScreen({ offlineQueue, setOfflineQueue, isOffline, setI
 // ─── Confirm check-out — single-shot warning for office workers ─────────
 function CheckOutConfirmModal({ checkInTime, totalMin, loading, requireSelfie = false, onCancel, onConfirm }) {
   const t = useT();
-  const [selfie, setSelfie] = React.useState('');
+  const camRef = React.useRef(null);
+  const [camReady, setCamReady] = React.useState(false);
+  const confirm = () => {
+    const shot = requireSelfie && camRef.current ? camRef.current() : null;
+    if (requireSelfie && !shot) return;
+    onConfirm(shot);
+  };
   React.useEffect(() => {
     const onKey = (e) => { if (e.key === 'Escape' && !loading) onCancel(); };
     window.addEventListener('keydown', onKey);
@@ -834,7 +840,7 @@ function CheckOutConfirmModal({ checkInTime, totalMin, loading, requireSelfie = 
           {requireSelfie && (
             <div style={{ marginTop: 14 }}>
               <label className="field-label">{t.selfie} *</label>
-              <SelfieCapture value={selfie} onChange={setSelfie} />
+              <SelfieCam captureRef={camRef} onReady={setCamReady} />
             </div>
           )}
 
@@ -843,7 +849,7 @@ function CheckOutConfirmModal({ checkInTime, totalMin, loading, requireSelfie = 
             <button className="btn btn-ghost" onClick={onCancel} disabled={loading}>
               {t.cancel || 'Cancel'}
             </button>
-            <button className="btn btn-danger" onClick={() => onConfirm(selfie || null)} disabled={loading || (requireSelfie && !selfie)}>
+            <button className="btn btn-danger" onClick={confirm} disabled={loading || (requireSelfie && !camReady)}>
               {loading ? <span className="spinner" /> : <Icon name="logout" size={16} />}
               Yes, check out
             </button>
@@ -1229,43 +1235,107 @@ function TimesheetPreview({ sessions, sites, holdStatus }) {
   );
 }
 
-// ─── Selfie capture (anti-buddy-punching) ─────────────────────────────
-// Opens the device's front camera via a file input (works on mobile PWAs);
-// returns a data URL. Shown only for employees with Require Selfie on Punch.
-function SelfieCapture({ value, onChange }) {
+// ─── Live selfie camera (anti-buddy-punching) ─────────────────────────
+// Opens the front camera INSIDE the popup (getUserMedia) and shows a live
+// preview. The parent grabs the current frame on submit via captureRef —
+// no separate "capture" tap, no file upload step. Falls back to a file
+// input if the camera/permission isn't available (older device, denied, or
+// an insecure context). onReady(true) when a frame can be captured.
+function SelfieCam({ captureRef, onReady }) {
   const t = useT();
-  const ref = React.useRef(null);
+  const videoRef = React.useRef(null);
+  const fileRef = React.useRef(null);
+  const [mode, setMode] = React.useState('init'); // init | live | fallback
+  const [shot, setShot] = React.useState('');     // fallback captured image
+
+  React.useEffect(() => {
+    let stream = null, cancelled = false;
+    (async () => {
+      try {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error('no camera');
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 640 } }, audio: false,
+        });
+        if (cancelled) { stream.getTracks().forEach((tk) => tk.stop()); return; }
+        if (videoRef.current) videoRef.current.srcObject = stream;
+        setMode('live');
+        if (onReady) onReady(true);
+      } catch (e) {
+        setMode('fallback');
+        if (onReady) onReady(false);
+      }
+    })();
+    return () => { cancelled = true; if (stream) stream.getTracks().forEach((tk) => tk.stop()); };
+  }, []);
+
+  React.useEffect(() => {
+    if (!captureRef) return undefined;
+    captureRef.current = () => {
+      if (mode === 'fallback') return shot || null;
+      const v = videoRef.current;
+      if (!v || !v.videoWidth) return null;
+      const side = Math.min(v.videoWidth, v.videoHeight);
+      const c = document.createElement('canvas');
+      c.width = 480; c.height = 480;
+      const ctx = c.getContext('2d');
+      const sx = (v.videoWidth - side) / 2, sy = (v.videoHeight - side) / 2;
+      ctx.translate(c.width, 0); ctx.scale(-1, 1); // mirror — natural selfie
+      ctx.drawImage(v, sx, sy, side, side, 0, 0, c.width, c.height);
+      return c.toDataURL('image/jpeg', 0.82);
+    };
+    return () => { if (captureRef) captureRef.current = null; };
+  }, [mode, shot]);
+
   const onPick = (e) => {
     const f = e.target.files && e.target.files[0];
     if (!f) return;
     const fr = new FileReader();
-    fr.onload = () => onChange(fr.result);
+    fr.onload = () => { setShot(fr.result); if (onReady) onReady(true); };
     fr.readAsDataURL(f);
     e.target.value = '';
   };
-  return (
-    <div>
-      <input ref={ref} type="file" accept="image/*" capture="user" style={{ display: 'none' }} onChange={onPick} />
-      {value ? (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <img src={value} alt="selfie" style={{ width: 56, height: 56, borderRadius: 12, objectFit: 'cover', border: '2px solid var(--ok)' }} />
-          <button type="button" className="btn btn-sm btn-ghost" onClick={() => ref.current && ref.current.click()}>
-            <Icon name="camera" size={14} /> {t.retake_selfie}
+
+  if (mode === 'fallback') {
+    return (
+      <div>
+        <input ref={fileRef} type="file" accept="image/*" capture="user" style={{ display: 'none' }} onChange={onPick} />
+        {shot ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <img src={shot} alt="" style={{ width: 72, height: 72, borderRadius: 12, objectFit: 'cover', border: '2px solid var(--ok)' }} />
+            <button type="button" className="btn btn-sm btn-ghost" onClick={() => fileRef.current && fileRef.current.click()}>
+              <Icon name="camera" size={14} /> {t.retake_selfie}
+            </button>
+          </div>
+        ) : (
+          <button type="button" className="btn btn-sm btn-primary" onClick={() => fileRef.current && fileRef.current.click()} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            <Icon name="camera" size={14} /> {t.take_selfie}
           </button>
-        </div>
-      ) : (
-        <button type="button" className="btn btn-sm btn-primary" onClick={() => ref.current && ref.current.click()} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-          <Icon name="camera" size={14} /> {t.take_selfie}
-        </button>
-      )}
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ width: '100%', maxWidth: 240, margin: '0 auto' }}>
+      <video
+        ref={videoRef}
+        autoPlay playsInline muted
+        style={{ width: '100%', aspectRatio: '1 / 1', objectFit: 'cover', borderRadius: 16, background: '#0b1b3a', transform: 'scaleX(-1)', display: 'block' }}
+      />
     </div>
   );
 }
 
 // Standalone selfie gate used by the in-zone check-in (which has no modal).
+// The primary button snaps the current camera frame AND submits in one tap.
 function SelfieModal({ title, sub, confirmLabel, onCancel, onConfirm, loading }) {
   const t = useT();
-  const [shot, setShot] = React.useState('');
+  const camRef = React.useRef(null);
+  const [ready, setReady] = React.useState(false);
+  const submit = () => {
+    const shot = camRef.current && camRef.current();
+    if (shot) onConfirm(shot);
+  };
   return ReactDOM.createPortal(
     <div className="modal-backdrop" onClick={loading ? undefined : onCancel}>
       <div className="modal-sheet" onClick={(e) => e.stopPropagation()}>
@@ -1276,13 +1346,11 @@ function SelfieModal({ title, sub, confirmLabel, onCancel, onConfirm, loading })
             </div>
             <div style={{ fontSize: 17, fontWeight: 700, letterSpacing: '-0.01em' }}>{title}</div>
           </div>
-          <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{sub || t.selfie_required}</div>
-          <div style={{ marginTop: 16 }}>
-            <SelfieCapture value={shot} onChange={setShot} />
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.3fr', gap: 10, marginTop: 22 }}>
+          <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 14 }}>{sub || t.selfie_required}</div>
+          <SelfieCam captureRef={camRef} onReady={setReady} />
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.3fr', gap: 10, marginTop: 18 }}>
             <button className="btn btn-ghost" onClick={onCancel} disabled={loading}>{t.cancel}</button>
-            <button className="btn btn-primary" onClick={() => onConfirm(shot)} disabled={!shot || loading}>
+            <button className="btn btn-primary" onClick={submit} disabled={!ready || loading}>
               {loading ? <span className="spinner" /> : <Icon name="check" size={16} />}
               {confirmLabel || t.cta_check_in}
             </button>
@@ -1304,7 +1372,8 @@ function CheckoutModal({ project, sites, inside = true, distance = 0, nearest = 
   const projectOptions = (window.PROJECTS && window.PROJECTS.length) ? window.PROJECTS : sites;
   const [offProject, setOffProject] = React.useState(defaultProject || nearest?.name || project || '');
   const [reason, setReason] = React.useState('');
-  const [selfie, setSelfie] = React.useState('');
+  const camRef = React.useRef(null);
+  const [camReady, setCamReady] = React.useState(false);
 
   // Scopes of Work are a global master (not per-project) — load once.
   // Pre-select the employee's default scope when set and still active;
@@ -1326,11 +1395,15 @@ function CheckoutModal({ project, sites, inside = true, distance = 0, nearest = 
   }, [onCancel, loading]);
 
   const distLabel = distance >= 1000 ? `${(distance / 1000).toFixed(1)} km` : `${distance} m`;
-  const selfieOk = !requireSelfie || !!selfie;
+  const selfieOk = !requireSelfie || camReady;
   const canSubmit = (inside ? true : (offProject && reason.trim().length >= 8)) && selfieOk && !loading;
-  const submit = () => onConfirm(inside
-    ? { scope_of_work: scope, selfie: selfie || null }
-    : { scope_of_work: scope, selected_project: offProject, reason: reason.trim(), selfie: selfie || null });
+  const submit = () => {
+    const shot = requireSelfie && camRef.current ? camRef.current() : null;
+    if (requireSelfie && !shot) return; // camera not ready yet
+    onConfirm(inside
+      ? { scope_of_work: scope, selfie: shot }
+      : { scope_of_work: scope, selected_project: offProject, reason: reason.trim(), selfie: shot });
+  };
 
   return ReactDOM.createPortal(
     <div className="modal-backdrop" onClick={loading ? undefined : onCancel}>
@@ -1428,7 +1501,7 @@ function CheckoutModal({ project, sites, inside = true, distance = 0, nearest = 
           {requireSelfie && (
             <div style={{ marginTop: 14 }}>
               <label className="field-label">{t.selfie} *</label>
-              <SelfieCapture value={selfie} onChange={setSelfie} />
+              <SelfieCam captureRef={camRef} onReady={setCamReady} />
             </div>
           )}
 
@@ -1707,7 +1780,8 @@ function OutsideZonePopup({ ctx, sites, requireSelfie = false, onCancel, onSubmi
   const projectOptions = (window.PROJECTS && window.PROJECTS.length) ? window.PROJECTS : sites;
   const [project, setProject] = React.useState(ctx.defaultProject || ctx.nearest?.name || '');
   const [reason, setReason] = React.useState('');
-  const [selfie, setSelfie] = React.useState('');
+  const camRef = React.useRef(null);
+  const [camReady, setCamReady] = React.useState(false);
 
   React.useEffect(() => {
     const onKey = (e) => { if (e.key === 'Escape' && !loading) onCancel(); };
@@ -1716,8 +1790,13 @@ function OutsideZonePopup({ ctx, sites, requireSelfie = false, onCancel, onSubmi
   }, [onCancel, loading]);
 
   const distLabel = ctx.distance >= 1000 ? `${(ctx.distance / 1000).toFixed(1)} km` : `${ctx.distance} m`;
-  const selfieOk = !requireSelfie || !!selfie;
+  const selfieOk = !requireSelfie || camReady;
   const canSubmit = project && reason.trim().length >= 8 && selfieOk && !loading;
+  const doSubmit = () => {
+    const shot = requireSelfie && camRef.current ? camRef.current() : null;
+    if (requireSelfie && !shot) return;
+    onSubmit({ selected_project: project, reason: reason.trim(), selfie: shot });
+  };
 
   return ReactDOM.createPortal(
     <div className="modal-backdrop" onClick={loading ? undefined : onCancel}>
@@ -1811,7 +1890,7 @@ function OutsideZonePopup({ ctx, sites, requireSelfie = false, onCancel, onSubmi
           {requireSelfie && (
             <div style={{ marginTop: 12 }}>
               <label className="field-label">{t.selfie} *</label>
-              <SelfieCapture value={selfie} onChange={setSelfie} />
+              <SelfieCam captureRef={camRef} onReady={setCamReady} />
             </div>
           )}
 
@@ -1820,7 +1899,7 @@ function OutsideZonePopup({ ctx, sites, requireSelfie = false, onCancel, onSubmi
             <button className="btn btn-ghost" onClick={onCancel} disabled={loading}>{t.cancel}</button>
             <button
               className="btn btn-primary"
-              onClick={() => onSubmit({ selected_project: project, reason: reason.trim(), selfie: selfie || null })}
+              onClick={doSubmit}
               disabled={!canSubmit}
             >
               {loading ? <span className="spinner" /> : <Icon name="check" size={16} />}
