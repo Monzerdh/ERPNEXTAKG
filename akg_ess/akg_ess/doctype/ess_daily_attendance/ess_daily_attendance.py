@@ -7,10 +7,11 @@ class ESSDailyAttendance(Document):
 
 
 def get_permission_query_conditions(user=None):
-    """Scope the list:
+    """Scope the list by the EMPLOYEE the row is for (not by who created it —
+    these rows are system-created, so owner is unreliable):
        - System / HR Manager / HR User: everything ("")
-       - ESS Manager: own rows + direct reports + leave_approver team
-       - ESS User / Employee: own rows only (owner-based)
+       - ESS Manager: own attendance + direct reports + leave_approver team
+       - ESS User / Employee: own attendance only
     """
     user = user or frappe.session.user
     if user == "Administrator":
@@ -19,24 +20,17 @@ def get_permission_query_conditions(user=None):
     if {"System Manager", "HR Manager", "HR User"} & roles:
         return ""
 
-    esc_user = frappe.db.escape(user)[1:-1]
+    esc = lambda v: frappe.db.escape(v)[1:-1]
     me_emp = frappe.db.get_value("Employee", {"user_id": user}, "name")
-    if "ESS Manager" in roles and me_emp:
-        team = frappe.get_all(
-            "Employee",
-            filters=[["reports_to", "=", me_emp], ["status", "=", "Active"]],
-            pluck="name",
-        )
-        approver_team = frappe.get_all(
-            "Employee",
-            filters=[["leave_approver", "=", user], ["status", "=", "Active"]],
-            pluck="name",
-        )
-        team = list({*team, *approver_team})
-        own = f"`tabESS Daily Attendance`.`owner` = '{esc_user}'"
-        if not team:
-            return own
-        in_clause = ",".join(f"'{frappe.db.escape(e)[1:-1]}'" for e in team)
-        return f"({own} OR `tabESS Daily Attendance`.`employee` IN ({in_clause}))"
+    if not me_emp:
+        # No linked Employee — fall back to rows they personally created.
+        return f"`tabESS Daily Attendance`.`owner` = '{esc(user)}'"
 
-    return f"`tabESS Daily Attendance`.`owner` = '{esc_user}'"
+    allowed = {me_emp}
+    if "ESS Manager" in roles:
+        allowed |= set(frappe.get_all(
+            "Employee", filters=[["reports_to", "=", me_emp], ["status", "=", "Active"]], pluck="name"))
+        allowed |= set(frappe.get_all(
+            "Employee", filters=[["leave_approver", "=", user], ["status", "=", "Active"]], pluck="name"))
+    in_clause = ",".join(f"'{esc(e)}'" for e in allowed if e)
+    return f"`tabESS Daily Attendance`.`employee` IN ({in_clause})"
