@@ -10,7 +10,7 @@
   "section_who",
   "employee", "employee_name", "date",
   "column_break_1",
-  "status", "scope",
+  "status", "scope", "via_correction",
   "section_times",
   "check_in_time", "check_in_zone", "check_out_time", "check_out_zone",
   "column_break_2",
@@ -32,6 +32,7 @@
   {"fieldname": "column_break_1",     "fieldtype": "Column Break"},
   {"fieldname": "status",             "fieldtype": "Select", "options": "Present\nAbsent\nPending Approval\nChecked In\nMissed Checkout", "default": "Present", "label": "Status", "in_standard_filter": 1, "in_list_view": 1},
   {"fieldname": "scope",              "fieldtype": "Link",   "options": "Scope of Work", "label": "Scope"},
+  {"fieldname": "via_correction",     "fieldtype": "Check",  "label": "Submitted by Correction", "read_only": 1, "in_list_view": 1, "in_standard_filter": 1, "description": "Set when this day's check-ins were created/edited through an approved Attendance Correction (or the missed-checkout rectify)."},
 
   {"fieldname": "section_times",      "fieldtype": "Section Break", "label": "Times"},
   {"fieldname": "check_in_time",      "fieldtype": "Datetime", "label": "Check-in Time"},

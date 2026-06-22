@@ -13,7 +13,7 @@ def execute(filters=None):
     where, values = _conditions(filters)
     rows = frappe.db.sql(
         f"""
-        SELECT employee, employee_name, date, status,
+        SELECT employee, employee_name, date, status, via_correction,
                check_in_time, check_out_time, check_in_zone, check_out_zone,
                check_in_project, check_out_project,
                normal_hours, overtime_hours, total_hours
@@ -72,6 +72,7 @@ def _columns():
         {"label": "Name", "fieldname": "employee_name", "fieldtype": "Data", "width": 180},
         {"label": "Date", "fieldname": "date", "fieldtype": "Date", "width": 95},
         {"label": "Status", "fieldname": "status", "fieldtype": "Data", "width": 120},
+        {"label": "Corrected", "fieldname": "via_correction", "fieldtype": "Check", "width": 80},
         {"label": "In", "fieldname": "check_in_time", "fieldtype": "Datetime", "width": 140},
         {"label": "In Zone", "fieldname": "check_in_zone", "fieldtype": "Data", "width": 80},
         {"label": "Out", "fieldname": "check_out_time", "fieldtype": "Datetime", "width": 140},

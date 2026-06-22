@@ -68,7 +68,7 @@ def recompute_day(employee, day):
                 ["time", ">=", day_start],
                 ["time", "<=", day_end],
             ],
-            fields=["name", "time", "project", "scope_of_work"],
+            fields=["name", "time", "project", "scope_of_work", "device_id"],
             order_by=f"time {order}",
             limit=1,
         )
@@ -77,6 +77,13 @@ def recompute_day(employee, day):
     in_row = _one("IN", "asc")
     out_row = _one("OUT", "desc")
     pending = _day_has_pending_hold(employee, day)
+    # Flag the day when its punches came from an approved correction /
+    # missed-checkout rectify (rather than a normal in-app punch).
+    _corr_dev = ("ESS-CORRECTION", "ESS-MISSED-RECTIFY")
+    via_correction = int(
+        (bool(in_row) and in_row.get("device_id") in _corr_dev)
+        or (bool(out_row) and out_row.get("device_id") in _corr_dev)
+    )
 
     # No real punch yet.
     if not in_row and not out_row:
@@ -103,7 +110,7 @@ def recompute_day(employee, day):
         hb = _hours_breakdown(in_dt, out_dt, has_ot, in_row.get("project"), out_row.get("project"))
         status = "Pending Approval" if pending else "Present"
         values = {
-            "employee": employee, "date": day, "status": status,
+            "employee": employee, "date": day, "status": status, "via_correction": via_correction,
             "scope": out_row.get("scope_of_work") or in_row.get("scope_of_work"),
             "check_in_time": in_row["time"], "check_out_time": out_row["time"],
             "check_in_project": in_row.get("project"), "check_out_project": out_row.get("project"),
@@ -125,7 +132,7 @@ def recompute_day(employee, day):
     if in_row and not out_row:
         status = "Pending Approval" if pending else "Checked In"
         values = {
-            "employee": employee, "date": day, "status": status,
+            "employee": employee, "date": day, "status": status, "via_correction": via_correction,
             "scope": in_row.get("scope_of_work"),
             "check_in_time": in_row["time"], "check_in_project": in_row.get("project"),
             "check_in_zone": _zone_for(employee, day, "IN"),
@@ -146,7 +153,7 @@ def recompute_day(employee, day):
     # OUT only — the IN is still a pending off-zone violation. Hold the day
     # (no HR) until the IN is approved, then this recomputes to Present.
     values = {
-        "employee": employee, "date": day, "status": "Pending Approval",
+        "employee": employee, "date": day, "status": "Pending Approval", "via_correction": via_correction,
         "scope": out_row.get("scope_of_work"),
         "check_out_time": out_row["time"], "check_out_project": out_row.get("project"),
         "check_out_zone": _zone_for(employee, day, "OUT"),
