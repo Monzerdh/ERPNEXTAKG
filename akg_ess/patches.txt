@@ -2,3 +2,4 @@
 
 [post_model_sync]
 akg_ess.patches.add_performance_indexes
+akg_ess.patches.set_retention_defaults

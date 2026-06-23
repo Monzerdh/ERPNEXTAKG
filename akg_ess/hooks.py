@@ -123,6 +123,12 @@ scheduler_events = {
         "0 1 * * *": [
             "akg_ess.attendance.mark_absentees",
         ],
+        # Monthly housekeeping (02:00 on the 1st). No-op unless retention is
+        # enabled in AKG ESS Settings; only purges transient notifications /
+        # stale push subscriptions — never attendance / audit data.
+        "0 2 1 * *": [
+            "akg_ess.retention.run_retention",
+        ],
     },
 }
 

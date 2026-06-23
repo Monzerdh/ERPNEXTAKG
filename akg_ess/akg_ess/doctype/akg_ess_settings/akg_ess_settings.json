@@ -21,6 +21,11 @@
   "auto_create_attendance",
   "geofence_section",
   "default_radius_meters",
+  "retention_section",
+  "enable_retention",
+  "notification_retention_days",
+  "retention_column_break",
+  "push_subscription_stale_days",
   "version_section",
   "settings_version"
  ],
@@ -43,6 +48,12 @@
 
   {"fieldname": "geofence_section", "fieldtype": "Section Break", "label": "Geofence Defaults", "collapsible": 1},
   {"fieldname": "default_radius_meters", "fieldtype": "Int", "label": "Default site radius (m)", "default": "200", "description": "Used when a Project has site coordinates set but no explicit radius."},
+
+  {"fieldname": "retention_section", "fieldtype": "Section Break", "label": "Data Retention", "collapsible": 1, "description": "Housekeeping for TRANSIENT data only. Attendance, check-ins and the approval trail are payroll/compliance records and are NEVER auto-deleted."},
+  {"fieldname": "enable_retention", "fieldtype": "Check", "label": "Enable automatic retention purge", "default": "0", "description": "Off by default. When on, a monthly job purges old read notifications and stale (disabled) push subscriptions only. Run akg_ess.retention.retention_report first to preview what would be removed."},
+  {"fieldname": "notification_retention_days", "fieldtype": "Int", "label": "Notification retention (days)", "default": "180", "description": "READ notifications older than this are purged. Unread notifications are always kept. 0 = keep forever."},
+  {"fieldname": "retention_column_break", "fieldtype": "Column Break"},
+  {"fieldname": "push_subscription_stale_days", "fieldtype": "Int", "label": "Stale push subscription (days)", "default": "90", "description": "DISABLED push subscriptions untouched for this long are purged. Active subscriptions are always kept. 0 = keep forever."},
 
   {"fieldname": "version_section", "fieldtype": "Section Break", "label": "System", "collapsible": 1},
   {"fieldname": "settings_version", "fieldtype": "Data", "label": "Settings Version", "read_only": 1, "default": "1.0", "description": "Bump on schema changes."}
